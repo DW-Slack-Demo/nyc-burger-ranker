@@ -5,11 +5,11 @@ const SDK = 'https://www.gstatic.com/firebasejs/10.7.1';
 
 const FIREBASE_CONFIG = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: "burger-rating-app.firebaseapp.com",
-  projectId: "burger-rating-app",
-  storageBucket: "burger-rating-app.firebasestorage.app",
-  messagingSenderId: "148456854796",
-  appId: "1:148456854796:web:a750700ca0b7eb65d1a529"
+  authDomain: "nyc-top-10.firebaseapp.com",
+  projectId: "nyc-top-10",
+  storageBucket: "nyc-top-10.firebasestorage.app",
+  messagingSenderId: "1008750104141",
+  appId: "1:1008750104141:web:607e759c887f2c95d01604"
 };
 
 // Firestore queues reads and writes while it can't reach the database, which looks like
