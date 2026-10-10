@@ -1,0 +1,10 @@
+name = "nyc-top10-ai-search"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Sites allowed to call this from a browser, comma-separated.
+ALLOWED_ORIGINS = "https://dw-slack-demo.github.io,http://localhost:5173"
+
+# ANTHROPIC_API_KEY is a secret, never stored here: `npx wrangler secret put ANTHROPIC_API_KEY`
