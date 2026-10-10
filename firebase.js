@@ -52,12 +52,15 @@ let firebasePromise = null;
 export function getFirebase() {
   if (!firebasePromise) {
     firebasePromise = (async () => {
-      const { getFirestore } = await loadFirestoreSdk();
+      const firestore = await loadFirestoreSdk();
       const { getAuth } = await loadAuthSdk();
-      const app = isDemoMode
-        ? null
-        : (await import(/* @vite-ignore */ `${SDK}/firebase-app.js`)).initializeApp(FIREBASE_CONFIG);
-      return { db: getFirestore(app), auth: getAuth(app) };
+      if (isDemoMode) return { db: firestore.getFirestore(null), auth: getAuth(null) };
+      const app = (await import(/* @vite-ignore */ `${SDK}/firebase-app.js`)).initializeApp(FIREBASE_CONFIG);
+      // Firestore's default streaming connection gets cut off by some phone browsers, ad
+      // blockers, VPNs and work networks, which shows up as "Couldn't reach the database".
+      // Plain repeated requests (long polling) get through those.
+      const db = firestore.initializeFirestore(app, { experimentalForceLongPolling: true });
+      return { db, auth: getAuth(app) };
     })();
     firebasePromise.catch(() => { firebasePromise = null; });
   }
