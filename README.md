@@ -1,4 +1,4 @@
-# nyc-burger-ranker
+# Top Shelf
 
 Rank your top 10 favorite burgers, martinis and pizza spots in New York City and see how they compare with others.
 
