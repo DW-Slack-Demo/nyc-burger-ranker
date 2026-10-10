@@ -57,7 +57,7 @@ the AI Finder says it isn't switched on and the rest of the app works as before.
    `VITE_AI_SEARCH_URL` with that address, then re-run the **Deploy to GitHub Pages**
    workflow.
 
-To run the helper from your own computer instead (needs Node 20+): `cd ai-search && npm
+To run the helper from your own computer instead (needs Node 22+): `cd ai-search && npm
 install && npx wrangler login && npx wrangler secret put ANTHROPIC_API_KEY && npx wrangler
 deploy`.
 
