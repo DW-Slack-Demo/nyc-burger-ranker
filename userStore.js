@@ -1,8 +1,8 @@
 // Per-user data in Firestore: users/{uid} holds the username, who they follow,
 // one saved top-10 list per category under rankings[categoryKey], and the spots they
-// want to try per category under wantToTry[categoryKey]. Those are the NYC lists; other
-// cities' lists sit under cities[cityKey].rankings and cities[cityKey].wantToTry, and
-// homeCity is the city the app opens to.
+// want to try per category under wantToTry[categoryKey], and the spots they've tried beyond
+// their top 10 under tried[categoryKey]. Those are the NYC lists; other cities' lists sit
+// under cities[cityKey] with the same three fields, and homeCity is the city the app opens to.
 // usernames/{lowercase name} records which account owns each username.
 import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
 
@@ -65,14 +65,15 @@ export async function createProfile(uid, username, legacyUserId = null) {
     hasAccount: true,
     rankings,
     wantToTry: {},
+    tried: {},
     following: [],
     createdAt: now,
     updatedAt: now,
   }));
 }
 
-// Saves every city's rankings and want-to-try lists so they are there the next time the
-// user signs in. lists is { nyc: { rankings, wantToTry }, miami: { ... } }.
+// Saves every city's rankings, want-to-try and Tried lists so they are there the next time
+// the user signs in. lists is { nyc: { rankings, wantToTry, tried }, miami: { ... } }.
 export async function saveLists(uid, lists) {
   const { db } = await getFirebase();
   const { doc, setDoc } = await loadFirestoreSdk();
@@ -80,6 +81,7 @@ export async function saveLists(uid, lists) {
   await setDoc(doc(db, 'users', uid), {
     rankings: nyc.rankings,
     wantToTry: nyc.wantToTry,
+    tried: nyc.tried,
     cities: otherCities,
     ranking: nyc.rankings.burgers || [], // legacy field read by older clients
     updatedAt: new Date().toISOString(),

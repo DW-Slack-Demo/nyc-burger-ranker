@@ -221,11 +221,20 @@ const normalizeWantToTry = (data) => {
   return lists;
 };
 
-// Every city's lists for one user: { nyc: { rankings, wantToTry }, miami: { ... } }. NYC's
-// are the original top-level fields, so lists saved before there were cities stay in NYC.
+// Spots people have been to beyond their top 10, one list per category. Only the top 10
+// counts on the leaderboard; this is a personal record.
+const MAX_TRIED = 100;
+const normalizeTried = (data) => {
+  const lists = { ...(data?.tried || {}) };
+  CATEGORY_KEYS.forEach((key) => { lists[key] = Array.isArray(lists[key]) ? lists[key] : []; });
+  return lists;
+};
+
+// Every city's lists for one user: { nyc: { rankings, wantToTry, tried }, miami: { ... } }.
+// NYC's are the original top-level fields, so lists saved before there were cities stay in NYC.
 const normalizeLists = (data) => Object.fromEntries(CITY_KEYS.map((city) => {
   const source = city === 'nyc' ? data : data?.cities?.[city];
-  return [city, { rankings: normalizeRankings(source), wantToTry: normalizeWantToTry(source) }];
+  return [city, { rankings: normalizeRankings(source), wantToTry: normalizeWantToTry(source), tried: normalizeTried(source) }];
 }));
 
 const countAllRanked = (lists) => CITY_KEYS.reduce((sum, city) => sum + countRanked(lists[city].rankings), 0);
@@ -256,9 +265,9 @@ export default function NYCBurgerRanker() {
   const [leaderboards, setLeaderboards] = useState(emptyLeaderboards);
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragSource, setDragSource] = useState(null);
-  const [view, setView] = useState('ranking'); // 'ranking', 'wantToTry', 'map', 'leaderboard', 'following', 'profile'
+  const [view, setView] = useState('ranking'); // 'ranking', 'wantToTry', 'tried', 'map', 'leaderboard', 'following', 'profile'
   // Which kinds of pins the map shows.
-  const [mapLayers, setMapLayers] = useState({ ranked: true, want: true, follows: true });
+  const [mapLayers, setMapLayers] = useState({ ranked: true, want: true, tried: true, follows: true });
   const [submitted, setSubmitted] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [expandedComments, setExpandedComments] = useState({});
@@ -301,17 +310,19 @@ export default function NYCBurgerRanker() {
   const cityInfo = CITIES[city];
   const picks = cityInfo.picks[category];
   // The open city's lists. The setters take a new value or an updater function, like useState's.
-  const { rankings, wantToTry } = lists[city];
+  const { rankings, wantToTry, tried } = lists[city];
   const updateCityList = (field) => (update) => setLists(prev => ({
     ...prev,
     [city]: { ...prev[city], [field]: typeof update === 'function' ? update(prev[city][field]) : update },
   }));
   const setRankings = updateCityList('rankings');
   const setWantToTry = updateCityList('wantToTry');
+  const setTried = updateCityList('tried');
   const rankedItems = rankings[category];
   const setRankedItems = (items) => setRankings(prev => ({ ...prev, [category]: items }));
   const leaderboard = leaderboards[city][category];
   const wantList = wantToTry[category];
+  const triedList = tried[category];
   const submittedKey = `${city}_${category}`;
 
   const switchCategory = (key) => {
@@ -750,13 +761,16 @@ export default function NYCBurgerRanker() {
       place_id: place.place_id,
       name: place.name,
       address: place.address,
-      rating: 5,
-      comments: '',
+      // A spot moved back from the Tried list keeps the stars and notes it had.
+      rating: place.rating || 5,
+      comments: place.comments || '',
       tags: place.tags || [],
       ...(place.location && { location: place.location }),
     }] }));
-    // Once it's ranked it has been tried, so it comes off the want-to-try list.
+    // Once it's ranked it has been tried, so it comes off the want-to-try list, and it is
+    // in the top 10 now rather than the Tried list.
     setWantToTry(prev => ({ ...prev, [key]: prev[key].filter(w => placeKey(w) !== placeKey(place)) }));
+    setTried(prev => ({ ...prev, [key]: prev[key].filter(t => placeKey(t) !== placeKey(place)) }));
     return true;
   };
 
@@ -769,6 +783,10 @@ export default function NYCBurgerRanker() {
     }
     if (hasPlace(wantToTry[key], place)) {
       alert(`${place.name} is already on your want-to-try list.`);
+      return false;
+    }
+    if (hasPlace(tried[key], place)) {
+      alert(`${place.name} is already on your Tried list.`);
       return false;
     }
     if (wantToTry[key].length >= MAX_WANT_TO_TRY) {
@@ -790,11 +808,71 @@ export default function NYCBurgerRanker() {
     setWantToTry(prev => ({ ...prev, [category]: prev[category].filter(w => placeKey(w) !== placeKey(place)) }));
   };
 
-  // "Tried it": moves the spot into the ranking so it can be rated.
+  // "Tried it? Rank it": moves the spot into the ranking so it can be rated. Also used by
+  // "Move to Top 10" on the Tried list.
   const markTried = (place) => {
     if (!addToList(place)) return;
     setView('ranking');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Adds a spot to the Tried list for a category (the open one unless another is named).
+  // Spots dropped from the top 10 (leavingRanking) bring their stars and notes with them.
+  const addToTried = (place, key = category, { leavingRanking = false } = {}) => {
+    const target = CATEGORIES[key];
+    if (!leavingRanking && hasPlace(rankings[key], place)) {
+      alert(`${place.name} is already in your ${target.label.toLowerCase()} top 10.`);
+      return false;
+    }
+    if (hasPlace(tried[key], place)) {
+      alert(`${place.name} is already on your Tried list.`);
+      return false;
+    }
+    if (tried[key].length >= MAX_TRIED) {
+      alert(`Your Tried list holds up to ${MAX_TRIED} ${target.plural}. Remove one to add another.`);
+      return false;
+    }
+    setTried(prev => ({ ...prev, [key]: [{
+      place_id: place.place_id,
+      name: place.name,
+      address: place.address,
+      tags: place.tags || [],
+      ...(place.location && { location: place.location }),
+      ...(place.rating && { rating: place.rating }),
+      comments: place.comments || '',
+      verdict: place.verdict || null, // 'liked', 'notForMe' or null
+      triedAt: place.triedAt || new Date().toISOString(),
+    }, ...prev[key]] }));
+    setWantToTry(prev => ({ ...prev, [key]: prev[key].filter(w => placeKey(w) !== placeKey(place)) }));
+    return true;
+  };
+
+  const updateTried = (item, field, value) => {
+    setTried(prev => ({ ...prev, [category]: prev[category].map(t => (t === item ? { ...t, [field]: value } : t)) }));
+  };
+
+  // Removing a spot from the Tried list removes it from your lists altogether, so your
+  // photos of it go too.
+  const removeFromTried = async (item) => {
+    const photos = myPhotos.filter(p => p.category === category && p.placeId === photoPlaceId(placeKey(item)));
+    if (photos.length > 0) {
+      const count = photos.length === 1 ? 'your photo' : `your ${photos.length} photos`;
+      if (!window.confirm(`Remove ${item.name} and ${count} of it?`)) return;
+      try {
+        for (const photo of photos) await handleDeletePhoto(photo.id);
+      } catch (error) {
+        setPhotoError({ key: placeKey(item), message: error.message });
+        return;
+      }
+    }
+    setTried(prev => ({ ...prev, [category]: prev[category].filter(other => other !== item) }));
+  };
+
+  const saveSearchResultAsTried = (place) => {
+    if (!addToTried(place)) return;
+    setSearchResults([]);
+    setSearchMessage('');
+    setSearchQuery('');
   };
 
   const saveSearchResultForLater = (place) => {
@@ -815,7 +893,7 @@ export default function NYCBurgerRanker() {
     }
     setView(key);
     // Pick up spots people you follow added since you signed in.
-    if (key === 'wantToTry' || key === 'map' || key === 'following') loadAllUsers();
+    if (key === 'wantToTry' || key === 'tried' || key === 'map' || key === 'following') loadAllUsers();
     // And anyone who followed you since then.
     if (key === 'following' && userId) loadFollowers(userId);
   };
@@ -864,20 +942,11 @@ export default function NYCBurgerRanker() {
     ));
   };
 
-  // Your photos of a spot go with it, so none are left where you can't reach them.
-  const removeBurger = async (index) => {
+  // A spot taken out of the top 10 moves to the Tried list (with its stars, notes and
+  // photos) rather than disappearing. It can be removed for good from there.
+  const removeBurger = (index) => {
     const item = rankedItems[index];
-    const photos = myPhotos.filter(p => p.category === category && p.placeId === photoPlaceId(placeKey(item)));
-    if (photos.length > 0) {
-      const count = photos.length === 1 ? 'your photo' : `your ${photos.length} photos`;
-      if (!window.confirm(`Remove ${item.name} and ${count} of it?`)) return;
-      try {
-        for (const photo of photos) await handleDeletePhoto(photo.id);
-      } catch (error) {
-        setPhotoError({ key: placeKey(item), message: error.message });
-        return;
-      }
-    }
+    if (!hasPlace(triedList, item) && !addToTried(item, category, { leavingRanking: true })) return;
     setRankings(prev => ({ ...prev, [category]: prev[category].filter(other => other !== item) }));
   };
 
@@ -928,6 +997,7 @@ export default function NYCBurgerRanker() {
     items.splice(targetIndex, 0, { ...burger, rating: 5, comments: '' });
     setRankedItems(items);
     setWantToTry(prev => ({ ...prev, [category]: prev[category].filter(w => placeKey(w) !== placeKey(burger)) }));
+    setTried(prev => ({ ...prev, [category]: prev[category].filter(t => placeKey(t) !== placeKey(burger)) }));
     handleDragEnd();
   };
 
@@ -1033,10 +1103,20 @@ export default function NYCBurgerRanker() {
   }));
   const sharedCount = wantConnections.filter(c => c.alsoWant.length > 0).length;
 
+  // For each spot on your Tried list: who you follow has also been (ranked it or tried it).
+  const triedConnections = triedList.map((item) => ({
+    item,
+    alsoTried: followingUsers.filter(u => hasPlace(u.tried[category], item)).map(u => u.username),
+    rankedBy: followingUsers.flatMap((u) => {
+      const index = u.rankings[category].findIndex(ranked => placeKey(ranked) === placeKey(item));
+      return index >= 0 ? [{ username: u.username, rank: index + 1 }] : [];
+    }),
+  }));
+
   // Spots people you follow want to try that aren't on your lists yet, most wanted first.
   const followsWant = Object.values(followingUsers.reduce((byPlace, u) => {
     u.wantToTry[category].forEach((item) => {
-      if (hasPlace(wantList, item) || hasPlace(rankedItems, item)) return;
+      if (hasPlace(wantList, item) || hasPlace(rankedItems, item) || hasPlace(triedList, item)) return;
       const key = placeKey(item);
       byPlace[key] = byPlace[key] || { item, usernames: [] };
       if (!byPlace[key].usernames.includes(u.username)) byPlace[key].usernames.push(u.username);
@@ -1047,8 +1127,8 @@ export default function NYCBurgerRanker() {
   const listNames = (names) => names.map(n => `@${n}`).join(', ');
 
   // Map pins for this category: one per place, gathering everything known about it. A pin
-  // takes the colour of the most personal list it is on (your ranking, then your
-  // want-to-try list, then people you follow) among the layers switched on.
+  // takes the colour of the most personal list it is on (your ranking, then your Tried
+  // list, then your want-to-try list, then people you follow) among the layers switched on.
   const mapPlaces = new Map();
   const noteOnMap = (item, kind, detail, username) => {
     const location = locationOf(item);
@@ -1069,27 +1149,31 @@ export default function NYCBurgerRanker() {
       if (place) place.rank = index + 1;
       return place;
     }),
+    ...triedList.map(item => noteOnMap(item, 'tried', item.verdict === 'liked'
+      ? 'On your Tried list · Liked it'
+      : item.verdict === 'notForMe' ? 'On your Tried list · Not for me' : 'On your Tried list')),
     ...wantList.map(item => noteOnMap(item, 'want', 'On your want-to-try list')),
   ].filter(place => !place).length;
   followingUsers.forEach((u) => {
     u.rankings[category].forEach((item, index) => noteOnMap(item, 'follows', `@${u.username} ranked it #${index + 1}`, u.username));
+    u.tried[category].forEach(item => noteOnMap(item, 'follows', `@${u.username} has tried it`, u.username));
     u.wantToTry[category].forEach(item => noteOnMap(item, 'follows', `@${u.username} wants to try it`, u.username));
   });
   const mapPins = [...mapPlaces.values()].flatMap((place) => {
-    const kind = ['ranked', 'want', 'follows'].find(k => mapLayers[k] && place.kinds.has(k));
+    const kind = ['ranked', 'tried', 'want', 'follows'].find(k => mapLayers[k] && place.kinds.has(k));
     if (!kind) return [];
-    const label = kind === 'ranked' ? String(place.rank) : kind === 'want' ? 'Try' : String(place.usernames.size);
+    const label = kind === 'ranked' ? String(place.rank) : kind === 'tried' ? '✓' : kind === 'want' ? 'Try' : String(place.usernames.size);
     return [{ key: place.key, lat: place.lat, lng: place.lng, kind, label, name: place.name, address: place.address, details: place.details }];
   });
-  const layerCounts = ['ranked', 'want', 'follows'].reduce((counts, k) => ({
+  const layerCounts = ['ranked', 'tried', 'want', 'follows'].reduce((counts, k) => ({
     ...counts,
     [k]: [...mapPlaces.values()].filter(place => place.kinds.has(k)).length,
   }), {});
 
-  // Search for official listings, used by both the ranking and want-to-try pages.
+  // Search for official listings, used by the ranking, want-to-try and Tried pages.
   const searchPanel = (
     <div className={panel}>
-      <div className={`${eyebrow} mb-3`}>{view === 'wantToTry' ? 'Find a spot to try' : 'Find a spot'}</div>
+      <div className={`${eyebrow} mb-3`}>{view === 'wantToTry' ? 'Find a spot to try' : view === 'tried' ? "Find a spot you've tried" : 'Find a spot'}</div>
       {replacingId && (
         <div className="mb-3 text-sm text-ink-soft bg-wine-light border border-wine/20 rounded-sm px-3 py-2 flex items-center justify-between gap-3">
           <span>Pick the official listing to replace the one you typed.</span>
@@ -1138,6 +1222,13 @@ export default function NYCBurgerRanker() {
                 >
                   <BookmarkPlus className="w-3.5 h-3.5" />Want to try
                 </button>
+              ) : view === 'tried' ? (
+                <button
+                  onClick={() => saveSearchResultAsTried(place)}
+                  className={`${primaryButton} shrink-0 px-4 py-2 flex items-center gap-1`}
+                >
+                  <Check className="w-3.5 h-3.5" />Tried it
+                </button>
               ) : (
                 <div className="shrink-0 flex items-center gap-2">
                   {!replacingId && (
@@ -1169,6 +1260,46 @@ export default function NYCBurgerRanker() {
   // everyone's photos are reloaded.
   const photosOf = (list, placeId) => list.filter(p => p.placeId === placeId);
   const myCategoryPhotos = myPhotos.filter(p => p.category === category);
+
+  // Your photos of a spot and the button to add one, on the ranking and Tried lists.
+  const photoRow = (item) => {
+    const key = placeKey(item);
+    const placeId = photoPlaceId(key);
+    const mine = photosOf(myCategoryPhotos, placeId);
+    const uploading = uploadingPhotoFor === key;
+    return (
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          {mine.map((photo, photoIndex) => (
+            <button
+              key={photo.id}
+              onClick={() => setPhotoViewer({ title: item.name, category, placeId, mineOnly: true, startIndex: photoIndex })}
+              aria-label={`Open your photo ${photoIndex + 1} of ${item.name}`}
+              className="w-16 h-16 rounded-sm overflow-hidden border border-line hover:border-wine"
+            >
+              <img src={photo.thumb} alt="" draggable={false} className="w-full h-full object-cover" />
+            </button>
+          ))}
+          <label className={`${quietButton} px-3 py-2 flex items-center gap-1 ${uploading || uploadingPhotoFor ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+            <Camera className="w-3.5 h-3.5" />
+            {uploading ? 'Adding...' : 'Add photo'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={!!uploadingPhotoFor}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) handlePhotoPick(item, file);
+              }}
+            />
+          </label>
+        </div>
+        {photoError.key === key && <p className="mt-1 text-xs text-wine">{photoError.message}</p>}
+      </div>
+    );
+  };
   const leaderboardPhotos = [
     ...(categoryPhotos[category] || []),
     ...myCategoryPhotos.filter(p => !(categoryPhotos[category] || []).some(other => other.id === p.id)),
@@ -1180,6 +1311,7 @@ export default function NYCBurgerRanker() {
   const views = [
     { key: 'ranking', label: 'My Ranking' },
     { key: 'wantToTry', label: 'Want to Try' },
+    { key: 'tried', label: 'Tried' },
     { key: 'map', label: 'Map' },
     { key: 'leaderboard', label: 'Leaderboard' },
     { key: 'following', label: `Following (${following.length})` },
@@ -1555,44 +1687,7 @@ export default function NYCBurgerRanker() {
                             rows="2"
                           />
 
-                          {(() => {
-                            const key = placeKey(burger);
-                            const placeId = photoPlaceId(key);
-                            const mine = photosOf(myCategoryPhotos, placeId);
-                            const uploading = uploadingPhotoFor === key;
-                            return (
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {mine.map((photo, photoIndex) => (
-                                    <button
-                                      key={photo.id}
-                                      onClick={() => setPhotoViewer({ title: burger.name, category, placeId, mineOnly: true, startIndex: photoIndex })}
-                                      aria-label={`Open your photo ${photoIndex + 1} of ${burger.name}`}
-                                      className="w-16 h-16 rounded-sm overflow-hidden border border-line hover:border-wine"
-                                    >
-                                      <img src={photo.thumb} alt="" draggable={false} className="w-full h-full object-cover" />
-                                    </button>
-                                  ))}
-                                  <label className={`${quietButton} px-3 py-2 flex items-center gap-1 ${uploading || uploadingPhotoFor ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
-                                    <Camera className="w-3.5 h-3.5" />
-                                    {uploading ? 'Adding...' : 'Add photo'}
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="sr-only"
-                                      disabled={!!uploadingPhotoFor}
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        e.target.value = '';
-                                        if (file) handlePhotoPick(burger, file);
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-                                {photoError.key === key && <p className="mt-1 text-xs text-wine">{photoError.message}</p>}
-                              </div>
-                            );
-                          })()}
+                          {photoRow(burger)}
                         </div>
 
                         <button onClick={() => removeBurger(index)} aria-label={`Remove ${burger.name}`} className="text-ink-muted hover:text-wine p-2">
@@ -1639,7 +1734,7 @@ export default function NYCBurgerRanker() {
                     <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
                       {picks.spots.map((place) => {
                         const saved = hasPlace(wantList, place);
-                        const ranked = hasPlace(rankedItems, place);
+                        const ranked = hasPlace(rankedItems, place) || hasPlace(triedList, place);
                         return (
                           <div key={place.place_id} className="flex items-center justify-between py-3 px-2">
                             <div>
@@ -1649,7 +1744,7 @@ export default function NYCBurgerRanker() {
                             {ranked || saved ? (
                               <span className="ml-2 shrink-0 text-[11px] uppercase tracking-wider text-ink-muted flex items-center gap-1">
                                 <Check className="w-3.5 h-3.5" />
-                                {ranked ? 'Ranked' : 'Saved'}
+                                {hasPlace(rankedItems, place) ? 'Ranked' : ranked ? 'Tried' : 'Saved'}
                               </span>
                             ) : (
                               <button
@@ -1709,13 +1804,22 @@ export default function NYCBurgerRanker() {
                               </span>
                             </div>
                           )}
-                          <button
-                            onClick={() => markTried(item)}
-                            className="mt-3 text-xs uppercase tracking-wider font-semibold text-wine hover:text-wine-dark flex items-center gap-1"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            Tried it? Rank it
-                          </button>
+                          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                            <button
+                              onClick={() => markTried(item)}
+                              className="text-xs uppercase tracking-wider font-semibold text-wine hover:text-wine-dark flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              Tried it? Rank it
+                            </button>
+                            <button
+                              onClick={() => addToTried(item)}
+                              className="text-xs uppercase tracking-wider font-semibold text-ink-soft hover:text-ink flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              Just tried it
+                            </button>
+                          </div>
                         </div>
                         <button onClick={() => removeFromWantToTry(item)} aria-label={`Remove ${item.name}`} className="text-ink-muted hover:text-wine p-2">
                           <Trash2 className="w-4 h-4" />
@@ -1761,11 +1865,151 @@ export default function NYCBurgerRanker() {
           </div>
         )}
 
+        {view === 'tried' && (
+          <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+            <div className="space-y-6">
+              {searchPanel}
+
+              {/* Recommended */}
+              <div className={panel}>
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <h3 className={heading}>{picks.title}</h3>
+                  <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
+                    {showRecommended ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {showRecommended && (
+                  <div>
+                    <p className="text-sm italic text-ink-muted mb-4">Been to one? Tap the check to add it to your Tried list.</p>
+                    <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
+                      {picks.spots.map((place) => {
+                        const ranked = hasPlace(rankedItems, place);
+                        const isTried = hasPlace(triedList, place);
+                        return (
+                          <div key={place.place_id} className="flex items-center justify-between py-3 px-2">
+                            <div>
+                              <div className="font-display text-lg text-ink leading-tight">{place.name}</div>
+                              <div className="text-xs text-ink-muted">{place.address}</div>
+                            </div>
+                            {ranked || isTried ? (
+                              <span className="ml-2 shrink-0 text-[11px] uppercase tracking-wider text-ink-muted flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" />
+                                {ranked ? 'Ranked' : 'Tried'}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => addToTried(place)}
+                                aria-label={`Add ${place.name} to your Tried list`}
+                                className="w-8 h-8 shrink-0 flex items-center justify-center border border-wine text-wine rounded-full hover:bg-wine hover:text-paper transition-colors ml-2"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={panel}>
+              <div className={eyebrow}>
+                {triedList.length} tried · not counted on the leaderboard
+              </div>
+              <h2 className="font-display text-3xl text-ink mt-1 mb-2">{cat.label} I've Tried</h2>
+              <p className="text-sm italic text-ink-muted mb-5">
+                Everywhere you've been beyond your top 10. Spots you take out of your top 10 land here too.
+              </p>
+
+              {triedList.length === 0 ? (
+                <div className="text-center py-16 border border-dashed border-line rounded-sm text-ink-muted">
+                  <Check className="w-8 h-8 mx-auto mb-3 text-line" />
+                  <div className="font-display italic text-2xl text-ink-soft mb-2">Nothing here yet</div>
+                  <p className="text-sm">Search for {cat.plural} you've been to, or tap "Just tried it" on your Want to Try list.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-line border-y border-line">
+                  {triedConnections.map(({ item, alsoTried, rankedBy }) => (
+                    <div key={placeKey(item)} className="py-4 px-2 flex items-start gap-3">
+                      <Check className="w-4 h-4 mt-1.5 text-ink-soft shrink-0" />
+                      <div className="flex-1 min-w-0 space-y-3">
+                        <div>
+                          <div className="font-display text-xl text-ink">{item.name}</div>
+                          <div className="text-sm text-ink-muted flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3" />
+                            {item.address}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2" role="group" aria-label={`Your verdict on ${item.name}`}>
+                          {[
+                            { key: 'liked', label: 'Liked it', on: 'bg-vert text-paper border-vert' },
+                            { key: 'notForMe', label: 'Not for me', on: 'bg-wine text-paper border-wine' },
+                          ].map(({ key, label, on }) => (
+                            <button
+                              key={key}
+                              onClick={() => updateTried(item, 'verdict', item.verdict === key ? null : key)}
+                              aria-pressed={item.verdict === key}
+                              className={`px-3 py-1 rounded-sm border text-xs uppercase tracking-wider font-semibold transition-colors ${
+                                item.verdict === key ? on : 'border-line text-ink-muted hover:text-ink hover:border-ink-soft'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <input
+                          type="text"
+                          value={item.comments || ''}
+                          onChange={(e) => updateTried(item, 'comments', e.target.value)}
+                          maxLength={200}
+                          placeholder="A quick note, like why it missed your top 10"
+                          aria-label={`Note about ${item.name}`}
+                          className="w-full px-3 py-2 bg-white/70 border border-line rounded-sm text-sm italic text-ink-soft placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-wine focus:border-wine"
+                        />
+
+                        {(alsoTried.length > 0 || rankedBy.length > 0) && (
+                          <div className="text-sm bg-brass-light border border-brass/40 rounded-sm px-3 py-1.5 text-ink-soft flex items-start gap-1.5">
+                            <Users className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                            <span>
+                              {[
+                                ...rankedBy.map(r => `@${r.username} ranked it #${r.rank}`),
+                                ...(alsoTried.length > 0 ? [`${listNames(alsoTried)} ${alsoTried.length === 1 ? 'has' : 'have'} tried it too`] : []),
+                              ].join(' · ')}
+                            </span>
+                          </div>
+                        )}
+
+                        {photoRow(item)}
+
+                        <button
+                          onClick={() => markTried(item)}
+                          className="text-xs uppercase tracking-wider font-semibold text-wine hover:text-wine-dark flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Move to Top 10
+                        </button>
+                      </div>
+                      <button onClick={() => removeFromTried(item)} aria-label={`Remove ${item.name}`} className="text-ink-muted hover:text-wine p-2">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {view === 'map' && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               {[
                 { key: 'ranked', label: 'My ranking', dot: 'bg-wine' },
+                { key: 'tried', label: 'Tried', dot: 'bg-ink-soft' },
                 { key: 'want', label: 'Want to try', dot: 'bg-brass' },
                 { key: 'follows', label: 'People I follow', dot: 'bg-vert' },
               ].map(({ key, label, dot }) => (
@@ -1787,7 +2031,7 @@ export default function NYCBurgerRanker() {
 
             {mapPins.length === 0 && (
               <p className="text-sm italic text-ink-muted text-center">
-                No {cat.singular} spots to show yet. Add some to your ranking or want-to-try list, or follow people to see theirs.
+                No {cat.singular} spots to show yet. Add some to your ranking, Tried or want-to-try list, or follow people to see theirs.
               </p>
             )}
             {unmappedCount > 0 && (
@@ -2078,6 +2322,33 @@ export default function NYCBurgerRanker() {
               )}
 
               {(() => {
+                const theirTried = selectedUserProfile.lists[city].tried[category];
+                if (theirTried.length === 0) return null;
+                return (
+                  <div className="mt-8">
+                    <div className={eyebrow}>Beyond their top 10</div>
+                    <h3 className={`${heading} mt-1 mb-4`}>{cat.label} They've Tried</h3>
+                    <div className="divide-y divide-line border-y border-line">
+                      {theirTried.map((item) => (
+                        <div key={placeKey(item)} className="py-3 px-2">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
+                            {item.verdict && (
+                              <span className={`shrink-0 text-[11px] uppercase tracking-wider font-semibold ${item.verdict === 'liked' ? 'text-vert' : 'text-wine'}`}>
+                                {item.verdict === 'liked' ? 'Liked it' : 'Not for me'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-ink-muted">{item.address}</div>
+                          {item.comments && <div className="mt-1 text-sm font-display italic text-ink-soft">"{item.comments}"</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
                 const theirWants = selectedUserProfile.lists[city].wantToTry[category];
                 return (
                   <div className="mt-8">
@@ -2090,6 +2361,7 @@ export default function NYCBurgerRanker() {
                         {theirWants.map((item) => {
                           const both = hasPlace(wantList, item);
                           const ranked = rankedItems.findIndex(r => placeKey(r) === placeKey(item));
+                          const youTried = hasPlace(triedList, item);
                           return (
                             <div key={placeKey(item)} className="py-3 px-2 flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -2097,8 +2369,9 @@ export default function NYCBurgerRanker() {
                                 <div className="text-xs text-ink-muted">{item.address}</div>
                                 {both && <div className="text-xs text-wine mt-1">You both want to try this</div>}
                                 {ranked >= 0 && <div className="text-xs text-brass mt-1">You ranked it #{ranked + 1}. Tell them about it!</div>}
+                                {youTried && <div className="text-xs text-brass mt-1">You've tried it. Tell them about it!</div>}
                               </div>
-                              {!both && ranked < 0 && (
+                              {!both && ranked < 0 && !youTried && (
                                 <button onClick={() => addToWantToTry(item)} className={`${quietButton} shrink-0 px-3 py-2 flex items-center gap-1`}>
                                   <BookmarkPlus className="w-3.5 h-3.5" />
                                   Me too
