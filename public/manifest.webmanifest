@@ -1,7 +1,7 @@
 {
   "name": "Top Shelf",
   "short_name": "Top Shelf",
-  "description": "Rank your top 10 burgers, martinis and pizza in New York City.",
+  "description": "Rank your top 10 burgers, martinis and pizza in New York City and Miami.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

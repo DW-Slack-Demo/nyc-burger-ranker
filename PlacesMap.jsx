@@ -2,8 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const NYC_CENTER = [40.735, -73.99];
-
 // Pin colours match the bistro palette in index.html.
 const PIN_COLORS = {
   ranked: '#6F1D2A', // wine
@@ -40,9 +38,9 @@ const popupContent = (pin) => {
   return box;
 };
 
-// A map of NYC with one pin per spot. Each pin is
+// A map of one city, opening at center ([lat, lng]), with one pin per spot. Each pin is
 // { key, lat, lng, kind: 'ranked' | 'want' | 'follows', label, name, address, details: [lines] }.
-export default function PlacesMap({ pins }) {
+export default function PlacesMap({ center, pins }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
@@ -52,7 +50,7 @@ export default function PlacesMap({ pins }) {
   const signature = JSON.stringify(pins);
 
   useEffect(() => {
-    const map = L.map(containerRef.current, { center: NYC_CENTER, zoom: 12, scrollWheelZoom: false });
+    const map = L.map(containerRef.current, { center, zoom: 12, scrollWheelZoom: false });
     // OpenStreetMap's free tiles need no key; they are toned down in index.html (.ts-map-tiles)
     // to suit the bistro palette.
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {

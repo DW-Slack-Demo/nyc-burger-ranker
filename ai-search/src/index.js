@@ -1,28 +1,49 @@
 // Backend for Top Shelf. The web app is a static site, so it can't hold API keys; it
 // sends searches here and this Worker calls Google Places and Claude with the keys kept as
 // Cloudflare secrets.
-//   POST /places {query}  -> official Google Maps listings for NYC food and drink spots
-//   POST /        {query}  -> AI Finder recommendations
+//   POST /places {query, city}  -> official Google Maps listings for food and drink spots in that city
+//   POST /        {query, city}  -> AI Finder recommendations
+// city is "nyc" or "miami"; anything else (including older versions of the site, which
+// don't send it) means NYC.
 import Anthropic from '@anthropic-ai/sdk';
 
 const CATEGORIES = ['burgers', 'martinis', 'pizza', 'other'];
 const MAX_QUERY_LENGTH = 300;
 
-// The five boroughs, so "Joe's" finds the one on Carmine St and not one in New Jersey.
-const NYC_BOUNDS = {
-  rectangle: {
-    low: { latitude: 40.4774, longitude: -74.2591 },
-    high: { latitude: 40.9176, longitude: -73.7004 },
+// Where each city's searches are limited to, so "Joe's" finds the one on Carmine St and
+// not one in New Jersey.
+const CITIES = {
+  nyc: {
+    name: 'New York City',
+    // The five boroughs.
+    bounds: {
+      rectangle: {
+        low: { latitude: 40.4774, longitude: -74.2591 },
+        high: { latitude: 40.9176, longitude: -73.7004 },
+      },
+    },
+  },
+  miami: {
+    name: 'Miami',
+    // Miami-Dade from Homestead up to Aventura, Miami Beach included.
+    bounds: {
+      rectangle: {
+        low: { latitude: 25.40, longitude: -80.55 },
+        high: { latitude: 25.98, longitude: -80.10 },
+      },
+    },
   },
 };
+
+const cityFor = (key) => CITIES[key] || CITIES.nyc;
 
 // Google tags every restaurant, bar and cafe with one of these, so anything else (a
 // street, a hotel lobby, a shop) is left out of the results.
 const FOOD_AND_DRINK = /^(food|restaurant|bar|pub|cafe|bakery|meal_takeaway|meal_delivery|night_club|steak_house|coffee_shop|.+_(restaurant|bar))$/;
 
-const SYSTEM_PROMPT = `You recommend places to eat and drink in New York City for an app where friends rank their top 10 burgers, martinis and pizza spots.
+const systemPrompt = (city) => `You recommend places to eat and drink in ${city} for an app where friends rank their top 10 burgers, martinis and pizza spots.
 
-Given a request in plain language, recommend 3 to 5 real places in NYC that fit it, respecting any neighborhood, borough, vibe, price or dish it mentions. Only recommend places you are confident exist and are open; if you are unsure whether a place is still open, leave it out.
+Given a request in plain language, recommend 3 to 5 real places in ${city} that fit it, respecting any neighborhood, vibe, price or dish it mentions. Only recommend places you are confident exist and are open; if you are unsure whether a place is still open, leave it out.
 
 For each place, set category to "burgers", "martinis" or "pizza" when the request is about that food or drink (a martini, cocktail or bar request is "martinis"); otherwise use "other". Keep "why" to one short sentence about what makes it a fit.`;
 
@@ -69,7 +90,7 @@ function json(body, status, headers) {
   });
 }
 
-async function findPlaces(env, query) {
+async function findPlaces(env, query, city) {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const response = await client.beta.messages.create({
     model: 'claude-opus-5-5',
@@ -80,7 +101,7 @@ async function findPlaces(env, query) {
       effort: 'low',
       format: { type: 'json_schema', schema: RESULT_SCHEMA },
     },
-    system: SYSTEM_PROMPT,
+    system: systemPrompt(city.name),
     messages: [{ role: 'user', content: query }],
   });
 
@@ -89,7 +110,7 @@ async function findPlaces(env, query) {
   return JSON.parse(text);
 }
 
-async function searchPlaces(env, textQuery, pageSize) {
+async function searchPlaces(env, textQuery, pageSize, city) {
   const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
     headers: {
@@ -97,7 +118,7 @@ async function searchPlaces(env, textQuery, pageSize) {
       'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY,
       'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.types,places.location',
     },
-    body: JSON.stringify({ textQuery, pageSize, locationRestriction: NYC_BOUNDS, languageCode: 'en' }),
+    body: JSON.stringify({ textQuery, pageSize, locationRestriction: city.bounds, languageCode: 'en' }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -122,12 +143,12 @@ class PlacesError extends Error {
 }
 
 // Swaps each AI suggestion for its official Google listing, so it saves with the same id
-// as the same place found through the search bar. Suggestions Google can't find in NYC
-// are dropped rather than saved under a made-up name.
-async function attachListings(env, results) {
+// as the same place found through the search bar. Suggestions Google can't find in the
+// city are dropped rather than saved under a made-up name.
+async function attachListings(env, results, city) {
   const matched = await Promise.all(results.map(async (r) => {
     try {
-      const [place] = await searchPlaces(env, `${r.name}, ${r.address}`, 1);
+      const [place] = await searchPlaces(env, `${r.name}, ${r.address}`, 1, city);
       return place ? { ...r, placeId: place.id, address: place.address, location: place.location } : null;
     } catch {
       return null;
@@ -151,11 +172,13 @@ async function overLimit(limiter, key) {
 
 const visitor = (request) => request.headers.get('CF-Connecting-IP') || 'unknown';
 
-async function readQuery(request) {
+// The search text and city from the request body, or null if it isn't valid JSON.
+async function readRequest(request) {
   try {
-    return String((await request.json()).query || '').trim();
+    const body = await request.json();
+    return { query: String(body.query || '').trim(), city: cityFor(body.city) };
   } catch {
-    return null;
+    return { query: null, city: CITIES.nyc };
   }
 }
 
@@ -175,12 +198,12 @@ async function handlePlaces(request, env, cors) {
   if (await overLimit(env.PLACES_LIMIT_PER_VISITOR, visitor(request))) {
     return json({ error: SLOW_DOWN }, 429, cors);
   }
-  const query = await readQuery(request);
+  const { query, city } = await readRequest(request);
   const invalid = checkQuery(query, cors);
   if (invalid) return invalid;
 
   try {
-    return json({ places: await searchPlaces(env, query, 10) }, 200, cors);
+    return json({ places: await searchPlaces(env, query, 10, city) }, 200, cors);
   } catch (error) {
     if (error instanceof PlacesError && error.status === 429) {
       return json({ error: SLOW_DOWN }, 429, cors);
@@ -208,13 +231,13 @@ export default {
       || await overLimit(env.AI_LIMIT_TOTAL, 'everyone')) {
       return json({ error: SLOW_DOWN }, 429, cors);
     }
-    const query = await readQuery(request);
+    const { query, city } = await readRequest(request);
     const invalid = checkQuery(query, cors);
     if (invalid) return invalid;
 
     try {
-      const found = await findPlaces(env, query);
-      if (env.GOOGLE_PLACES_API_KEY) found.results = await attachListings(env, found.results || []);
+      const found = await findPlaces(env, query, city);
+      if (env.GOOGLE_PLACES_API_KEY) found.results = await attachListings(env, found.results || [], city);
       return json(found, 200, cors);
     } catch (error) {
       if (error instanceof Anthropic.RateLimitError) {

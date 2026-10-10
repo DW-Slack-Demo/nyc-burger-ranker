@@ -3,58 +3,29 @@ import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
 import { watchAuth, logOut, addEmail } from './auth.js';
-import { loadUser, createProfile, saveLists, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
+import { loadUser, createProfile, saveLists, saveHomeCity, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
 import PlacesMap from './PlacesMap.jsx';
 import { fuzzySearch, normalize } from './fuzzySearch.js';
 
-// Recommended spots carry approximate map coordinates. Chains listed as "Multiple
-// Locations" are pinned at one well-known branch.
+// What each category is, in every city.
 const CATEGORIES = {
   burgers: {
     label: 'Burgers',
     emoji: '🍔',
     singular: 'burger',
     plural: 'burgers',
-    recommendedTitle: 'Recommended by Eater & Timeout',
-    searchPlaceholder: 'Search for burger spots in NYC...',
-    aiPlaceholder: "E.g., I'm in the West Village, find me a burger spot",
+    searchPlaceholder: 'Search for burger spots in',
     commentPlaceholder: 'What makes this burger special?',
-    recommended: [
-      { name: "Raoul's", address: "180 Prince St, NY 10012", place_id: "raouls", location: { lat: 40.7266, lng: -74.0027 }, source: "Eater", tags: ["Classic", "Upscale"] },
-      { name: "J.G. Melon", address: "1291 3rd Ave, NY 10021", place_id: "jgmelon", location: { lat: 40.7712, lng: -73.959 }, source: "Timeout", tags: ["Classic", "No-frills"] },
-      { name: "Corner Bistro", address: "331 W 4th St, NY 10014", place_id: "corner", location: { lat: 40.7378, lng: -74.0039 }, source: "Eater", tags: ["Classic", "Dive Bar"] },
-      { name: "Shake Shack", address: "Multiple Locations", place_id: "shakeshack", location: { lat: 40.7415, lng: -73.9882 }, source: "Timeout", tags: ["Chain", "Fast Casual"] },
-      { name: "Superiority Burger", address: "119 Avenue A, NY 10009", place_id: "superiority", location: { lat: 40.7262, lng: -73.9834 }, source: "Eater", tags: ["Vegetarian"] },
-      { name: "Emily", address: "Multiple Locations", place_id: "emily", location: { lat: 40.729, lng: -74.0034 }, source: "Eater", tags: ["Upscale"] },
-      { name: "Minetta Tavern", address: "113 MacDougal St, NY 10012", place_id: "minetta", location: { lat: 40.7302, lng: -74.0006 }, source: "Eater", tags: ["Upscale", "Classic"] },
-      { name: "Burger Joint", address: "119 W 56th St, NY 10019", place_id: "burgerjoint", location: { lat: 40.7643, lng: -73.9784 }, source: "Timeout", tags: ["Hidden Gem"] },
-      { name: "Peter Luger", address: "178 Broadway, Brooklyn", place_id: "luger", location: { lat: 40.7099, lng: -73.9623 }, source: "Eater", tags: ["Steakhouse"] },
-      { name: "Black Tap", address: "Multiple Locations", place_id: "blacktap", location: { lat: 40.7237, lng: -74.0045 }, source: "Timeout", tags: ["Instagrammable"] },
-      { name: "Flip Sigi", address: "324 E 11th St, NY 10003", place_id: "flipsigi", location: { lat: 40.7295, lng: -73.984 }, source: "Eater", tags: ["Smash Burger"] },
-    ],
-    tags: ["Classic", "Upscale", "Vegetarian", "Smash Burger", "Fast Casual", "Gastropub", "Dive Bar", "Hidden Gem", "Steakhouse", "Chain", "No-frills", "Instagrammable"],
+    tags: ["Classic", "Upscale", "Vegetarian", "Smash Burger", "Fast Casual", "Gastropub", "Dive Bar", "Hidden Gem", "Steakhouse", "Chain", "No-frills", "Instagrammable", "Frita"],
   },
   martinis: {
     label: 'Martinis',
     emoji: '🍸',
     singular: 'martini',
     plural: 'martinis',
-    recommendedTitle: 'Popular Martini Spots',
-    searchPlaceholder: 'Search for martini bars in NYC...',
-    aiPlaceholder: "E.g., Somewhere classy near Grand Central for a dirty martini",
+    searchPlaceholder: 'Search for martini bars in',
     commentPlaceholder: 'What makes this martini special?',
-    recommended: [
-      { name: "Bemelmans Bar", address: "35 E 76th St, NY 10021", place_id: "bemelmans", location: { lat: 40.7742, lng: -73.9634 }, tags: ["Hotel Bar", "Classic"] },
-      { name: "King Cole Bar", address: "2 E 55th St, NY 10022", place_id: "kingcole", location: { lat: 40.7614, lng: -73.975 }, tags: ["Hotel Bar", "Upscale"] },
-      { name: "Dante", address: "79-81 MacDougal St, NY 10012", place_id: "dante", location: { lat: 40.729, lng: -74.0021 }, tags: ["Classic", "Happy Hour"] },
-      { name: "The Campbell", address: "15 Vanderbilt Ave, NY 10017", place_id: "campbell", location: { lat: 40.7527, lng: -73.9772 }, tags: ["Upscale", "Hidden Gem"] },
-      { name: "Temple Bar", address: "332 Lafayette St, NY 10012", place_id: "templebar", location: { lat: 40.7255, lng: -73.9947 }, tags: ["Classic", "Speakeasy"] },
-      { name: "Keens Steakhouse", address: "72 W 36th St, NY 10018", place_id: "keens", location: { lat: 40.7508, lng: -73.9866 }, tags: ["Steakhouse", "Classic"] },
-      { name: "Employees Only", address: "510 Hudson St, NY 10014", place_id: "employeesonly", location: { lat: 40.7335, lng: -74.006 }, tags: ["Speakeasy"] },
-      { name: "Gage & Tollner", address: "372 Fulton St, Brooklyn", place_id: "gagetollner", location: { lat: 40.6905, lng: -73.9878 }, tags: ["Classic", "Upscale"] },
-      { name: "Dear Irving", address: "55 Irving Pl, NY 10003", place_id: "dearirving", location: { lat: 40.7353, lng: -73.9876 }, tags: ["Speakeasy", "Instagrammable"] },
-    ],
     tags: ["Classic", "Dirty", "Gin", "Vodka", "Hotel Bar", "Speakeasy", "Steakhouse", "Upscale", "Dive Bar", "Hidden Gem", "Happy Hour", "Instagrammable"],
   },
   pizza: {
@@ -62,28 +33,128 @@ const CATEGORIES = {
     emoji: '🍕',
     singular: 'pizza',
     plural: 'pizzas',
-    recommendedTitle: 'Popular Pizza Spots',
-    searchPlaceholder: 'Search for pizza places in NYC...',
-    aiPlaceholder: "E.g., Best late-night slice in the East Village",
+    searchPlaceholder: 'Search for pizza places in',
     commentPlaceholder: 'What makes this pizza special?',
-    recommended: [
-      { name: "Lucali", address: "575 Henry St, Brooklyn", place_id: "lucali", location: { lat: 40.6818, lng: -74.0001 }, tags: ["Whole Pie", "Cash Only"] },
-      { name: "Di Fara", address: "1424 Avenue J, Brooklyn", place_id: "difara", location: { lat: 40.625, lng: -73.9614 }, tags: ["Classic", "Slice"] },
-      { name: "Joe's Pizza", address: "7 Carmine St, NY 10014", place_id: "joes", location: { lat: 40.7305, lng: -74.0021 }, tags: ["Slice", "New York Style"] },
-      { name: "Prince Street Pizza", address: "27 Prince St, NY 10012", place_id: "princestreet", location: { lat: 40.7231, lng: -73.9945 }, tags: ["Sicilian", "Slice"] },
-      { name: "L'Industrie", address: "Multiple Locations", place_id: "lindustrie", location: { lat: 40.7116, lng: -73.958 }, tags: ["Slice"] },
-      { name: "John's of Bleecker Street", address: "278 Bleecker St, NY 10014", place_id: "johns", location: { lat: 40.7316, lng: -74.0034 }, tags: ["Coal Oven", "Whole Pie"] },
-      { name: "Lombardi's", address: "32 Spring St, NY 10012", place_id: "lombardis", location: { lat: 40.7216, lng: -73.9956 }, tags: ["Coal Oven", "Classic"] },
-      { name: "Scarr's Pizza", address: "35 Orchard St, NY 10002", place_id: "scarrs", location: { lat: 40.7153, lng: -73.9915 }, tags: ["Slice", "New York Style"] },
-      { name: "Una Pizza Napoletana", address: "175 Orchard St, NY 10002", place_id: "unapizza", location: { lat: 40.7215, lng: -73.9884 }, tags: ["Neapolitan", "Wood-Fired"] },
-      { name: "Totonno's", address: "1524 Neptune Ave, Brooklyn", place_id: "totonnos", location: { lat: 40.5789, lng: -73.9838 }, tags: ["Coal Oven", "Classic"] },
-      { name: "Joe & Pat's", address: "1758 Victory Blvd, Staten Island", place_id: "joeandpats", location: { lat: 40.6129, lng: -74.1218 }, tags: ["Whole Pie", "Classic"] },
-    ],
     tags: ["Slice", "Whole Pie", "New York Style", "Neapolitan", "Sicilian", "Grandma", "Coal Oven", "Wood-Fired", "Classic", "Hidden Gem", "Cash Only", "Late Night"],
   },
 };
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES);
+
+// Each city has its own lists, leaderboard, map and recommended spots. Recommended spots
+// carry approximate map coordinates; chains listed as "Multiple Locations" are pinned at
+// one well-known branch. Their ids must be unique across cities, so a Shake Shack found in
+// Miami isn't counted as the NYC one.
+const CITIES = {
+  nyc: {
+    label: 'NYC',
+    name: 'New York City',
+    center: [40.735, -73.99],
+    fallbackAddress: 'New York, NY',
+    picks: {
+      burgers: {
+        title: 'Recommended by Eater & Timeout',
+        aiPlaceholder: "E.g., I'm in the West Village, find me a burger spot",
+        spots: [
+        { name: "Raoul's", address: "180 Prince St, NY 10012", place_id: "raouls", location: { lat: 40.7266, lng: -74.0027 }, source: "Eater", tags: ["Classic", "Upscale"] },
+        { name: "J.G. Melon", address: "1291 3rd Ave, NY 10021", place_id: "jgmelon", location: { lat: 40.7712, lng: -73.959 }, source: "Timeout", tags: ["Classic", "No-frills"] },
+        { name: "Corner Bistro", address: "331 W 4th St, NY 10014", place_id: "corner", location: { lat: 40.7378, lng: -74.0039 }, source: "Eater", tags: ["Classic", "Dive Bar"] },
+        { name: "Shake Shack", address: "Multiple Locations", place_id: "shakeshack", location: { lat: 40.7415, lng: -73.9882 }, source: "Timeout", tags: ["Chain", "Fast Casual"] },
+        { name: "Superiority Burger", address: "119 Avenue A, NY 10009", place_id: "superiority", location: { lat: 40.7262, lng: -73.9834 }, source: "Eater", tags: ["Vegetarian"] },
+        { name: "Emily", address: "Multiple Locations", place_id: "emily", location: { lat: 40.729, lng: -74.0034 }, source: "Eater", tags: ["Upscale"] },
+        { name: "Minetta Tavern", address: "113 MacDougal St, NY 10012", place_id: "minetta", location: { lat: 40.7302, lng: -74.0006 }, source: "Eater", tags: ["Upscale", "Classic"] },
+        { name: "Burger Joint", address: "119 W 56th St, NY 10019", place_id: "burgerjoint", location: { lat: 40.7643, lng: -73.9784 }, source: "Timeout", tags: ["Hidden Gem"] },
+        { name: "Peter Luger", address: "178 Broadway, Brooklyn", place_id: "luger", location: { lat: 40.7099, lng: -73.9623 }, source: "Eater", tags: ["Steakhouse"] },
+        { name: "Black Tap", address: "Multiple Locations", place_id: "blacktap", location: { lat: 40.7237, lng: -74.0045 }, source: "Timeout", tags: ["Instagrammable"] },
+        { name: "Flip Sigi", address: "324 E 11th St, NY 10003", place_id: "flipsigi", location: { lat: 40.7295, lng: -73.984 }, source: "Eater", tags: ["Smash Burger"] },
+        ],
+      },
+      martinis: {
+        title: 'Popular Martini Spots',
+        aiPlaceholder: "E.g., Somewhere classy near Grand Central for a dirty martini",
+        spots: [
+        { name: "Bemelmans Bar", address: "35 E 76th St, NY 10021", place_id: "bemelmans", location: { lat: 40.7742, lng: -73.9634 }, tags: ["Hotel Bar", "Classic"] },
+        { name: "King Cole Bar", address: "2 E 55th St, NY 10022", place_id: "kingcole", location: { lat: 40.7614, lng: -73.975 }, tags: ["Hotel Bar", "Upscale"] },
+        { name: "Dante", address: "79-81 MacDougal St, NY 10012", place_id: "dante", location: { lat: 40.729, lng: -74.0021 }, tags: ["Classic", "Happy Hour"] },
+        { name: "The Campbell", address: "15 Vanderbilt Ave, NY 10017", place_id: "campbell", location: { lat: 40.7527, lng: -73.9772 }, tags: ["Upscale", "Hidden Gem"] },
+        { name: "Temple Bar", address: "332 Lafayette St, NY 10012", place_id: "templebar", location: { lat: 40.7255, lng: -73.9947 }, tags: ["Classic", "Speakeasy"] },
+        { name: "Keens Steakhouse", address: "72 W 36th St, NY 10018", place_id: "keens", location: { lat: 40.7508, lng: -73.9866 }, tags: ["Steakhouse", "Classic"] },
+        { name: "Employees Only", address: "510 Hudson St, NY 10014", place_id: "employeesonly", location: { lat: 40.7335, lng: -74.006 }, tags: ["Speakeasy"] },
+        { name: "Gage & Tollner", address: "372 Fulton St, Brooklyn", place_id: "gagetollner", location: { lat: 40.6905, lng: -73.9878 }, tags: ["Classic", "Upscale"] },
+        { name: "Dear Irving", address: "55 Irving Pl, NY 10003", place_id: "dearirving", location: { lat: 40.7353, lng: -73.9876 }, tags: ["Speakeasy", "Instagrammable"] },
+        ],
+      },
+      pizza: {
+        title: 'Popular Pizza Spots',
+        aiPlaceholder: "E.g., Best late-night slice in the East Village",
+        spots: [
+        { name: "Lucali", address: "575 Henry St, Brooklyn", place_id: "lucali", location: { lat: 40.6818, lng: -74.0001 }, tags: ["Whole Pie", "Cash Only"] },
+        { name: "Di Fara", address: "1424 Avenue J, Brooklyn", place_id: "difara", location: { lat: 40.625, lng: -73.9614 }, tags: ["Classic", "Slice"] },
+        { name: "Joe's Pizza", address: "7 Carmine St, NY 10014", place_id: "joes", location: { lat: 40.7305, lng: -74.0021 }, tags: ["Slice", "New York Style"] },
+        { name: "Prince Street Pizza", address: "27 Prince St, NY 10012", place_id: "princestreet", location: { lat: 40.7231, lng: -73.9945 }, tags: ["Sicilian", "Slice"] },
+        { name: "L'Industrie", address: "Multiple Locations", place_id: "lindustrie", location: { lat: 40.7116, lng: -73.958 }, tags: ["Slice"] },
+        { name: "John's of Bleecker Street", address: "278 Bleecker St, NY 10014", place_id: "johns", location: { lat: 40.7316, lng: -74.0034 }, tags: ["Coal Oven", "Whole Pie"] },
+        { name: "Lombardi's", address: "32 Spring St, NY 10012", place_id: "lombardis", location: { lat: 40.7216, lng: -73.9956 }, tags: ["Coal Oven", "Classic"] },
+        { name: "Scarr's Pizza", address: "35 Orchard St, NY 10002", place_id: "scarrs", location: { lat: 40.7153, lng: -73.9915 }, tags: ["Slice", "New York Style"] },
+        { name: "Una Pizza Napoletana", address: "175 Orchard St, NY 10002", place_id: "unapizza", location: { lat: 40.7215, lng: -73.9884 }, tags: ["Neapolitan", "Wood-Fired"] },
+        { name: "Totonno's", address: "1524 Neptune Ave, Brooklyn", place_id: "totonnos", location: { lat: 40.5789, lng: -73.9838 }, tags: ["Coal Oven", "Classic"] },
+        { name: "Joe & Pat's", address: "1758 Victory Blvd, Staten Island", place_id: "joeandpats", location: { lat: 40.6129, lng: -74.1218 }, tags: ["Whole Pie", "Classic"] },
+        ],
+      },
+    },
+  },
+  miami: {
+    label: 'Miami',
+    name: 'Miami',
+    center: [25.79, -80.2],
+    fallbackAddress: 'Miami, FL',
+    picks: {
+      burgers: {
+        title: 'Popular Burger Spots',
+        aiPlaceholder: "E.g., A late-night burger near Wynwood",
+        spots: [
+          { name: "Kush", address: "2003 N Miami Ave, Miami, FL 33127", place_id: "miami-kush", location: { lat: 25.7952, lng: -80.1958 }, tags: ["Gastropub", "Classic"] },
+          { name: "LoKal", address: "3190 Commodore Plaza, Miami, FL 33133", place_id: "miami-lokal", location: { lat: 25.7281, lng: -80.2433 }, tags: ["Classic", "Hidden Gem"] },
+          { name: "Pincho", address: "Multiple Locations", place_id: "miami-pincho", location: { lat: 25.7508, lng: -80.2587 }, tags: ["Chain", "Fast Casual"] },
+          { name: "El Rey de las Fritas", address: "1821 SW 8th St, Miami, FL 33135", place_id: "miami-reydelasfritas", location: { lat: 25.7653, lng: -80.2252 }, tags: ["Frita", "No-frills"] },
+          { name: "El Mago de las Fritas", address: "5828 SW 8th St, Miami, FL 33144", place_id: "miami-magodelasfritas", location: { lat: 25.7631, lng: -80.2879 }, tags: ["Frita", "Hidden Gem"] },
+          { name: "Blue Collar", address: "6730 Biscayne Blvd, Miami, FL 33138", place_id: "miami-bluecollar", location: { lat: 25.8378, lng: -80.1844 }, tags: ["Classic", "No-frills"] },
+          { name: "Burger & Beer Joint", address: "1766 Bay Rd, Miami Beach, FL 33139", place_id: "miami-bbjoint", location: { lat: 25.7937, lng: -80.1432 }, tags: ["Gastropub"] },
+          { name: "Shake Shack", address: "Multiple Locations", place_id: "miami-shakeshack", location: { lat: 25.7906, lng: -80.1393 }, tags: ["Chain", "Fast Casual"] },
+        ],
+      },
+      martinis: {
+        title: 'Popular Martini Spots',
+        aiPlaceholder: "E.g., An old-school martini in South Beach",
+        spots: [
+          { name: "Joe's Stone Crab", address: "11 Washington Ave, Miami Beach, FL 33139", place_id: "miami-joesstonecrab", location: { lat: 25.7686, lng: -80.1343 }, tags: ["Classic", "Upscale"] },
+          { name: "The Surf Club Restaurant", address: "9011 Collins Ave, Surfside, FL 33154", place_id: "miami-surfclub", location: { lat: 25.8762, lng: -80.1213 }, tags: ["Hotel Bar", "Upscale"] },
+          { name: "Employees Only", address: "1030 Washington Ave, Miami Beach, FL 33139", place_id: "miami-employeesonly", location: { lat: 25.7807, lng: -80.1323 }, tags: ["Speakeasy"] },
+          { name: "Café La Trova", address: "971 SW 8th St, Miami, FL 33130", place_id: "miami-cafelatrova", location: { lat: 25.7656, lng: -80.2093 }, tags: ["Classic", "Hidden Gem"] },
+          { name: "The Regent Cocktail Club", address: "1690 Collins Ave, Miami Beach, FL 33139", place_id: "miami-regent", location: { lat: 25.7915, lng: -80.1294 }, tags: ["Hotel Bar", "Classic"] },
+          { name: "Prime 112", address: "112 Ocean Dr, Miami Beach, FL 33139", place_id: "miami-prime112", location: { lat: 25.7698, lng: -80.1340 }, tags: ["Steakhouse", "Upscale"] },
+          { name: "Lost Boy Dry Goods", address: "157 E Flagler St, Miami, FL 33131", place_id: "miami-lostboy", location: { lat: 25.7742, lng: -80.1903 }, tags: ["Dive Bar", "Happy Hour"] },
+        ],
+      },
+      pizza: {
+        title: 'Popular Pizza Spots',
+        aiPlaceholder: "E.g., A wood-fired pie in the Design District",
+        spots: [
+          { name: "Lucali", address: "1930 Bay Rd, Miami Beach, FL 33139", place_id: "miami-lucali", location: { lat: 25.7956, lng: -80.1438 }, tags: ["Whole Pie"] },
+          { name: "Harry's Pizza", address: "3918 N Miami Ave, Miami, FL 33127", place_id: "miami-harrys", location: { lat: 25.8136, lng: -80.1952 }, tags: ["Wood-Fired"] },
+          { name: "Ironside Pizza", address: "7580 NE 4th Ct, Miami, FL 33138", place_id: "miami-ironside", location: { lat: 25.8456, lng: -80.1862 }, tags: ["Neapolitan", "Wood-Fired"] },
+          { name: "Andiamo", address: "5600 Biscayne Blvd, Miami, FL 33137", place_id: "miami-andiamo", location: { lat: 25.8264, lng: -80.1846 }, tags: ["Wood-Fired", "Classic"] },
+          { name: "Mister O1 Extraordinary Pizza", address: "Multiple Locations", place_id: "miami-mistero1", location: { lat: 25.7869, lng: -80.1318 }, tags: ["Neapolitan"] },
+          { name: "Frankie's Pizza", address: "9118 SW 40th St, Miami, FL 33165", place_id: "miami-frankies", location: { lat: 25.7330, lng: -80.3443 }, tags: ["Classic", "Slice"] },
+          { name: "Steve's Pizza", address: "12101 Biscayne Blvd, North Miami, FL 33181", place_id: "miami-steves", location: { lat: 25.8857, lng: -80.1658 }, tags: ["Slice", "Late Night"] },
+        ],
+      },
+    },
+  },
+};
+
+const CITY_KEYS = Object.keys(CITIES);
+const isCity = (key) => CITY_KEYS.includes(key);
 
 // The AI Finder calls a small server (ai-search/) that holds the Anthropic API key,
 // since a key in this static site would be visible to anyone.
@@ -94,8 +165,8 @@ const AI_SEARCH_URL = import.meta.env.VITE_AI_SEARCH_URL;
 const PLACES_URL = AI_SEARCH_URL && `${AI_SEARCH_URL.replace(/\/+$/, '')}/places`;
 
 // Reuse a recommended spot's id when the AI suggests it, so leaderboard votes add up.
-const placeIdFor = (name, key) => {
-  const known = CATEGORIES[key]?.recommended.find(r => r.name.toLowerCase() === name.toLowerCase());
+const placeIdFor = (name, key, city) => {
+  const known = CITIES[city].picks[key]?.spots.find(r => r.name.toLowerCase() === name.toLowerCase());
   return known ? known.place_id : `ai-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 };
 
@@ -103,7 +174,7 @@ const placeIdFor = (name, key) => {
 // the AI (ai-…), so two people can have the same place under different ids.
 const isUnverified = (item) => /^(custom|ai)-/.test(item.place_id || '');
 
-const ALL_RECOMMENDED = CATEGORY_KEYS.flatMap(key => CATEGORIES[key].recommended);
+const ALL_RECOMMENDED = CITY_KEYS.flatMap(city => CATEGORY_KEYS.flatMap(key => CITIES[city].picks[key].spots));
 
 // Where to pin a saved spot. Recommended spots saved before they had coordinates use
 // the recommended list's.
@@ -112,10 +183,10 @@ const streetNumber = (address) => (address || '').match(/^\d[\d-]*/)?.[0];
 
 // A Google listing for one of the recommended spots keeps the recommended spot's id, so
 // people who added it from the list and people who searched for it are counted together.
-// Chains listed as "Multiple Locations" match any branch.
-const toListing = (place) => {
+// Chains listed as "Multiple Locations" match any branch in the same city.
+const toListing = (place, city) => {
   const name = normalize(place.name);
-  const known = ALL_RECOMMENDED.find((r) => {
+  const known = CATEGORY_KEYS.flatMap(key => CITIES[city].picks[key].spots).find((r) => {
     const rec = normalize(r.name);
     const sameName = name === rec || name.startsWith(`${rec} `) || rec.startsWith(`${name} `);
     if (!sameName) return false;
@@ -148,6 +219,17 @@ const normalizeWantToTry = (data) => {
   return lists;
 };
 
+// Every city's lists for one user: { nyc: { rankings, wantToTry }, miami: { ... } }. NYC's
+// are the original top-level fields, so lists saved before there were cities stay in NYC.
+const normalizeLists = (data) => Object.fromEntries(CITY_KEYS.map((city) => {
+  const source = city === 'nyc' ? data : data?.cities?.[city];
+  return [city, { rankings: normalizeRankings(source), wantToTry: normalizeWantToTry(source) }];
+}));
+
+const countAllRanked = (lists) => CITY_KEYS.reduce((sum, city) => sum + countRanked(lists[city].rankings), 0);
+
+const emptyLeaderboards = () => Object.fromEntries(CITY_KEYS.map(city => [city, normalizeRankings(null)]));
+
 // Two lists hold the same place when the listing ids match. Hand-typed spots have one-off
 // ids, so those are compared by name.
 const placeKey = (item) => (item.place_id && !isUnverified(item) ? item.place_id : `name:${normalize(item.name || '')}`);
@@ -165,9 +247,11 @@ export default function NYCBurgerRanker() {
   // The place_id of a hand-typed spot being swapped for its official listing.
   const [replacingId, setReplacingId] = useState(null);
   const [category, setCategory] = useState('burgers');
-  const [rankings, setRankings] = useState(() => normalizeRankings(null));
-  const [wantToTry, setWantToTry] = useState(() => normalizeWantToTry(null));
-  const [leaderboards, setLeaderboards] = useState(() => normalizeRankings(null));
+  const [city, setCity] = useState('nyc');
+  // The city the app opens to, chosen by each user.
+  const [homeCity, setHomeCity] = useState('nyc');
+  const [lists, setLists] = useState(() => normalizeLists(null));
+  const [leaderboards, setLeaderboards] = useState(emptyLeaderboards);
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragSource, setDragSource] = useState(null);
   const [view, setView] = useState('ranking'); // 'ranking', 'wantToTry', 'map', 'leaderboard', 'following', 'profile'
@@ -204,10 +288,21 @@ export default function NYCBurgerRanker() {
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
 
   const cat = CATEGORIES[category];
+  const cityInfo = CITIES[city];
+  const picks = cityInfo.picks[category];
+  // The open city's lists. The setters take a new value or an updater function, like useState's.
+  const { rankings, wantToTry } = lists[city];
+  const updateCityList = (field) => (update) => setLists(prev => ({
+    ...prev,
+    [city]: { ...prev[city], [field]: typeof update === 'function' ? update(prev[city][field]) : update },
+  }));
+  const setRankings = updateCityList('rankings');
+  const setWantToTry = updateCityList('wantToTry');
   const rankedItems = rankings[category];
   const setRankedItems = (items) => setRankings(prev => ({ ...prev, [category]: items }));
-  const leaderboard = leaderboards[category];
+  const leaderboard = leaderboards[city][category];
   const wantList = wantToTry[category];
+  const submittedKey = `${city}_${category}`;
 
   const switchCategory = (key) => {
     setCategory(key);
@@ -218,6 +313,22 @@ export default function NYCBurgerRanker() {
     setSelectedTags([]);
     setDraggedIndex(null);
     setDragSource(null);
+  };
+
+  const switchCity = (key) => {
+    if (key === city) return;
+    switchCategory(category);
+    clearAiSearch();
+    setCity(key);
+  };
+
+  const makeHomeCity = async () => {
+    setHomeCity(city);
+    try {
+      await saveHomeCity(userId, city);
+    } catch (error) {
+      console.error('Error saving default city:', error);
+    }
   };
 
   useEffect(() => {
@@ -253,7 +364,7 @@ export default function NYCBurgerRanker() {
   // Save lists automatically shortly after each change, so they are there on the next visit.
   useEffect(() => {
     if (!userId || lastSavedRankingsRef.current === null) return;
-    const serialized = JSON.stringify({ rankings, wantToTry });
+    const serialized = JSON.stringify(lists);
     if (serialized === lastSavedRankingsRef.current) return;
 
     setSaveStatus('saving');
@@ -268,7 +379,7 @@ export default function NYCBurgerRanker() {
       }
     }, 800);
     return () => clearTimeout(timer);
-  }, [rankings, wantToTry, userId]);
+  }, [lists, userId]);
 
   const resetUserState = () => {
     lastSavedRankingsRef.current = null;
@@ -277,8 +388,9 @@ export default function NYCBurgerRanker() {
     setHasEmail(true);
     setNewEmail('');
     setEmailStatus({ busy: false, error: '', sentTo: '' });
-    setRankings(normalizeRankings(null));
-    setWantToTry(normalizeWantToTry(null));
+    setLists(normalizeLists(null));
+    setCity('nyc');
+    setHomeCity('nyc');
     setSubmitted({});
     setFollowing([]);
     setFollowers([]);
@@ -301,11 +413,12 @@ export default function NYCBurgerRanker() {
         profile = await loadUser(user.uid);
       }
 
-      const loadedRankings = normalizeRankings(profile);
-      const loadedWantToTry = normalizeWantToTry(profile);
-      lastSavedRankingsRef.current = JSON.stringify({ rankings: loadedRankings, wantToTry: loadedWantToTry });
-      setRankings(loadedRankings);
-      setWantToTry(loadedWantToTry);
+      const loadedLists = normalizeLists(profile);
+      lastSavedRankingsRef.current = JSON.stringify(loadedLists);
+      setLists(loadedLists);
+      const home = isCity(profile?.homeCity) ? profile.homeCity : 'nyc';
+      setHomeCity(home);
+      setCity(home);
       setUsername(profile?.username || user.username);
       setFollowing(profile?.following || []);
       setUserId(user.uid);
@@ -326,13 +439,12 @@ export default function NYCBurgerRanker() {
     try {
       const users = await fetchAllUsers();
       setAllUsers(users.map((data) => {
-        const userRankings = normalizeRankings(data);
+        const userLists = normalizeLists(data);
         return {
           userId: data.userId,
           username: data.username,
-          rankings: userRankings,
-          wantToTry: normalizeWantToTry(data),
-          rankingCount: countRanked(userRankings),
+          lists: userLists,
+          rankingCount: countAllRanked(userLists),
           updatedAt: data.updatedAt,
         };
       }));
@@ -352,9 +464,9 @@ export default function NYCBurgerRanker() {
   const handleLogOut = async () => {
     try {
       // Flush an autosave that hasn't fired yet so nothing is lost.
-      const serialized = JSON.stringify({ rankings, wantToTry });
+      const serialized = JSON.stringify(lists);
       if (lastSavedRankingsRef.current !== null && serialized !== lastSavedRankingsRef.current) {
-        await saveLists(userId, { rankings, wantToTry });
+        await saveLists(userId, lists);
       }
       await logOut();
     } catch (error) {
@@ -402,8 +514,7 @@ export default function NYCBurgerRanker() {
         setSelectedUserProfile({
           userId: targetUserId,
           username: data.username,
-          rankings: normalizeRankings(data),
-          wantToTry: normalizeWantToTry(data),
+          lists: normalizeLists(data),
           updatedAt: data.updatedAt,
         });
         setView('profile');
@@ -420,12 +531,16 @@ export default function NYCBurgerRanker() {
       const submissionsRef = collection(firestore, 'submissions');
       const snapshot = await getDocs(submissionsRef);
       
-      const scoresByCategory = {};
-      CATEGORY_KEYS.forEach((key) => { scoresByCategory[key] = {}; });
+      const scoresByCity = {};
+      CITY_KEYS.forEach((c) => {
+        scoresByCity[c] = {};
+        CATEGORY_KEYS.forEach((key) => { scoresByCity[c][key] = {}; });
+      });
       snapshot.forEach((doc) => {
         const submission = doc.data();
-        // Submissions saved before categories existed are burger rankings.
-        const burgerScores = scoresByCategory[submission.category || 'burgers'];
+        // Submissions saved before cities existed are NYC's, and before categories existed
+        // they are burger rankings.
+        const burgerScores = scoresByCity[submission.city || 'nyc']?.[submission.category || 'burgers'];
         if (!burgerScores) return;
         // A list counts once per spot and only its top 10, with ratings kept to 1-5 stars,
         // so an edited submission can't stuff the leaderboard.
@@ -460,16 +575,16 @@ export default function NYCBurgerRanker() {
         });
       });
 
-      const leaderboardData = {};
-      CATEGORY_KEYS.forEach((key) => {
-        leaderboardData[key] = Object.values(scoresByCategory[key])
+      const leaderboardData = emptyLeaderboards();
+      CITY_KEYS.forEach((c) => CATEGORY_KEYS.forEach((key) => {
+        leaderboardData[c][key] = Object.values(scoresByCity[c][key])
           .map((burger) => ({
             ...burger,
             avgRating: (burger.totalRatings / burger.submissions).toFixed(1),
           }))
           .sort((a, b) => b.totalPoints - a.totalPoints)
           .slice(0, 20);
-      });
+      }));
 
       setLeaderboards(leaderboardData);
     } catch (error) {
@@ -500,7 +615,7 @@ export default function NYCBurgerRanker() {
       const response = await fetch(AI_SEARCH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: aiSearchQuery }),
+        body: JSON.stringify({ query: aiSearchQuery, city }),
       });
       const data = await response.json().catch(() => ({}));
       if (searchId !== aiSearchIdRef.current) return;
@@ -508,11 +623,11 @@ export default function NYCBurgerRanker() {
       // With Google Maps switched on, the server attaches each spot's official listing.
       const results = (data.results || []).map(r => (r.placeId ? {
         ...r,
-        ...toListing({ id: r.placeId, name: r.name, address: r.address, location: r.location }),
+        ...toListing({ id: r.placeId, name: r.name, address: r.address, location: r.location }, city),
       } : {
         ...r,
-        place_id: placeIdFor(r.name, r.category),
-        address: r.address || r.neighborhood || 'New York, NY',
+        place_id: placeIdFor(r.name, r.category, city),
+        address: r.address || r.neighborhood || cityInfo.fallbackAddress,
       }));
       setAiSearchResults(results);
       if (results.length === 0) setAiSearchMessage('No matches for that one. Try describing it another way.');
@@ -539,20 +654,20 @@ export default function NYCBurgerRanker() {
         const response = await fetch(PLACES_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q }),
+          body: JSON.stringify({ query: q, city }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `Search failed (${response.status})`);
         const seen = new Set();
-        results = (data.places || []).map(toListing).filter((p) => !seen.has(p.place_id) && seen.add(p.place_id));
-        if (results.length === 0) setSearchMessage(`No restaurants or bars in NYC match "${q}". Try the name as it appears on Google Maps.`);
+        results = (data.places || []).map(p => toListing(p, city)).filter((p) => !seen.has(p.place_id) && seen.add(p.place_id));
+        if (results.length === 0) setSearchMessage(`No restaurants or bars in ${cityInfo.name} match "${q}". Try the name as it appears on Google Maps.`);
       } catch (error) {
         console.error('Place search error:', error);
-        results = fuzzySearch(cat.recommended, q);
+        results = fuzzySearch(picks.spots, q);
         setSearchMessage(`${error.message} ${results.length ? 'Showing matching recommended spots instead.' : 'Try again, or pick from the recommended spots below.'}`);
       }
     } else {
-      results = fuzzySearch(cat.recommended, q);
+      results = fuzzySearch(picks.spots, q);
       setSearchMessage(`Google Maps search isn't switched on for this site yet, so only the recommended spots can be searched.${results.length ? '' : ` None of them match "${q}".`}`);
     }
 
@@ -727,7 +842,7 @@ export default function NYCBurgerRanker() {
     e.preventDefault();
     if (dragSource !== 'recommended' || draggedIndex === null) return;
 
-    const burger = cat.recommended[draggedIndex];
+    const burger = picks.spots[draggedIndex];
     if (rankedItems.length >= 10) {
       alert(`You can only rank 10 ${cat.plural}!`);
       handleDragEnd();
@@ -758,11 +873,11 @@ export default function NYCBurgerRanker() {
     }
 
     try {
-      await saveLists(userId, { rankings, wantToTry });
-      lastSavedRankingsRef.current = JSON.stringify({ rankings, wantToTry });
-      await submitRanking(userId, username, category, rankedItems);
+      await saveLists(userId, lists);
+      lastSavedRankingsRef.current = JSON.stringify(lists);
+      await submitRanking(userId, username, city, category, rankedItems);
 
-      setSubmitted(prev => ({ ...prev, [category]: true }));
+      setSubmitted(prev => ({ ...prev, [submittedKey]: true }));
       await updateLeaderboard(db);
       setTimeout(() => setView('leaderboard'), 1000);
     } catch (error) {
@@ -829,7 +944,10 @@ export default function NYCBurgerRanker() {
       )
     : allUsers.filter(u => u.userId !== userId);
 
-  const followingUsers = allUsers.filter(u => following.includes(u.userId));
+  // People you follow, with their lists for the open city.
+  const followingUsers = allUsers
+    .filter(u => following.includes(u.userId))
+    .map(u => ({ ...u, ...u.lists[city] }));
   // Followers with their ranking counts when we have them.
   const followerUsers = followers.map(f => allUsers.find(u => u.userId === f.userId) || { ...f, rankingCount: 0 });
 
@@ -917,7 +1035,7 @@ export default function NYCBurgerRanker() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
             maxLength={300}
-            placeholder={cat.searchPlaceholder}
+            placeholder={`${cat.searchPlaceholder} ${cityInfo.label}...`}
             className={`${input} pl-9`}
           />
         </div>
@@ -988,8 +1106,35 @@ export default function NYCBurgerRanker() {
   return (
     <div className="min-h-screen px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
-        <header className="text-center pt-12 pb-8">
-          <div className={eyebrow}>New York City</div>
+        <header className="relative text-center pt-20 sm:pt-12 pb-8">
+          {/* Which city's lists, leaderboard and map are showing. */}
+          <div className="absolute left-0 top-4 flex flex-col items-start gap-1">
+            <div className="inline-flex border border-line rounded-sm bg-card p-0.5" role="group" aria-label="City">
+              {CITY_KEYS.map((key) => (
+                <button
+                  key={key}
+                  onClick={() => switchCity(key)}
+                  aria-pressed={city === key}
+                  className={`px-3 py-1.5 rounded-sm uppercase tracking-wider text-xs font-semibold transition-colors ${
+                    city === key ? 'bg-wine text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {CITIES[key].label}
+                </button>
+              ))}
+            </div>
+            {city === homeCity ? (
+              <span className="text-[11px] text-ink-muted flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                Opens here by default
+              </span>
+            ) : (
+              <button onClick={makeHomeCity} className="text-[11px] text-wine hover:text-wine-dark underline underline-offset-2">
+                Open to {cityInfo.label} by default
+              </button>
+            )}
+          </div>
+          <div className={eyebrow}>{cityInfo.name}</div>
           <h1 className="font-display italic text-6xl sm:text-7xl text-wine mt-2">Top Shelf</h1>
           <div className="flex items-center justify-center gap-3 mt-4" aria-hidden="true">
             <span className="h-px w-16 bg-brass" />
@@ -1113,7 +1258,7 @@ export default function NYCBurgerRanker() {
                   onChange={(e) => (e.target.value ? setAiSearchQuery(e.target.value) : clearAiSearch())}
                   onKeyPress={(e) => e.key === 'Enter' && handleAiSearch()}
                   onKeyDown={(e) => e.key === 'Escape' && clearAiSearch()}
-                  placeholder={cat.aiPlaceholder}
+                  placeholder={picks.aiPlaceholder}
                   maxLength={300}
                   className={`${input} focus:ring-vert focus:border-vert`}
                 />
@@ -1164,7 +1309,7 @@ export default function NYCBurgerRanker() {
             {/* Recommended */}
             <div className={panel}>
               <div className="flex items-baseline justify-between gap-3 mb-1">
-                <h3 className={heading}>{cat.recommendedTitle}</h3>
+                <h3 className={heading}>{picks.title}</h3>
                 <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
                   {showRecommended ? 'Hide' : 'Show'}
                 </button>
@@ -1173,7 +1318,7 @@ export default function NYCBurgerRanker() {
                 <div>
                   <p className="text-sm italic text-ink-muted mb-4">Drag these into your ranking, or tap + to add.</p>
                   <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
-                    {cat.recommended.map((burger, idx) => (
+                    {picks.spots.map((burger, idx) => (
                       <div
                         key={idx}
                         draggable
@@ -1330,7 +1475,7 @@ export default function NYCBurgerRanker() {
                   onClick={saveRanking}
                   className="bg-wine text-paper px-10 py-4 rounded-sm uppercase tracking-[0.18em] text-sm font-semibold hover:bg-wine-dark transition-colors"
                 >
-                  {submitted[category] ? `Update My ${cat.label} Ranking` : `Submit My ${cat.label} Ranking`}
+                  {submitted[submittedKey] ? `Update My ${cat.label} Ranking` : `Submit My ${cat.label} Ranking`}
                 </button>
                 <p className="text-sm italic text-ink-muted mt-2">Your ranking will be visible to your followers.</p>
               </div>
@@ -1347,7 +1492,7 @@ export default function NYCBurgerRanker() {
               {/* Recommended */}
               <div className={panel}>
                 <div className="flex items-baseline justify-between gap-3 mb-1">
-                  <h3 className={heading}>{cat.recommendedTitle}</h3>
+                  <h3 className={heading}>{picks.title}</h3>
                   <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
                     {showRecommended ? 'Hide' : 'Show'}
                   </button>
@@ -1356,7 +1501,7 @@ export default function NYCBurgerRanker() {
                   <div>
                     <p className="text-sm italic text-ink-muted mb-4">Haven't been yet? Tap the bookmark to save one for later.</p>
                     <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
-                      {cat.recommended.map((place) => {
+                      {picks.spots.map((place) => {
                         const saved = hasPlace(wantList, place);
                         const ranked = hasPlace(rankedItems, place);
                         return (
@@ -1502,7 +1647,7 @@ export default function NYCBurgerRanker() {
               ))}
             </div>
 
-            <PlacesMap pins={mapPins} />
+            <PlacesMap key={city} center={cityInfo.center} pins={mapPins} />
 
             {mapPins.length === 0 && (
               <p className="text-sm italic text-ink-muted text-center">
@@ -1550,7 +1695,7 @@ export default function NYCBurgerRanker() {
 
             <div className={panel}>
               <div className={eyebrow}>The leaderboard</div>
-              <h2 className="font-display text-3xl text-ink mt-1 mb-5">NYC's Best {cat.label}</h2>
+              <h2 className="font-display text-3xl text-ink mt-1 mb-5">{cityInfo.label}'s Best {cat.label}</h2>
 
               {filteredLeaderboard.length === 0 ? (
                 <div className="text-center py-16 border border-dashed border-line rounded-sm text-ink-muted">
@@ -1717,7 +1862,7 @@ export default function NYCBurgerRanker() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
-                  <p className="text-sm text-ink-muted">{countRanked(selectedUserProfile.rankings)} spots ranked</p>
+                  <p className="text-sm text-ink-muted">{countAllRanked(selectedUserProfile.lists)} spots ranked</p>
                 </div>
                 {following.includes(selectedUserProfile.userId) ? (
                   <button onClick={() => unfollowUser(selectedUserProfile.userId)} className={`${quietButton} px-6 py-3`}>
@@ -1731,13 +1876,13 @@ export default function NYCBurgerRanker() {
                 )}
               </div>
 
-              <div className={eyebrow}>Their picks</div>
+              <div className={eyebrow}>Their picks · {cityInfo.name}</div>
               <h3 className={`${heading} mt-1 mb-4`}>Their Top {cat.label}</h3>
-              {selectedUserProfile.rankings[category].length === 0 ? (
+              {selectedUserProfile.lists[city].rankings[category].length === 0 ? (
                 <p className="font-display italic text-ink-muted text-center py-8">This user hasn't ranked any {cat.plural} yet</p>
               ) : (
                 <div className="divide-y divide-line border-y border-line">
-                  {selectedUserProfile.rankings[category].map((burger, index) => (
+                  {selectedUserProfile.lists[city].rankings[category].map((burger, index) => (
                     <div key={index} className="flex items-start gap-4 py-4 px-2">
                       <div className="w-10 flex-shrink-0 text-center font-display italic text-4xl leading-none text-wine">
                         {index + 1}
@@ -1772,7 +1917,7 @@ export default function NYCBurgerRanker() {
               )}
 
               {(() => {
-                const theirWants = selectedUserProfile.wantToTry[category];
+                const theirWants = selectedUserProfile.lists[city].wantToTry[category];
                 return (
                   <div className="mt-8">
                     <div className={eyebrow}>Their want to try</div>
