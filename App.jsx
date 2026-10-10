@@ -1,15 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Search, GripVertical, Star, Trophy, MapPin, MessageSquare, Trash2, Plus, Sparkles, Tag, Filter, X, User, UserPlus, Users, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, GripVertical, Star, Trophy, MapPin, MessageSquare, Trash2, Plus, Sparkles, Tag, Filter, X, User, UserPlus, Users, Settings, LogOut } from 'lucide-react';
 
-// REPLACE THIS WITH YOUR FIREBASE CONFIG
-const FIREBASE_CONFIG = {
-  apiKey: "process.env.REACT_APP_GOOGLE_API_KEY",
-  authDomain: "burger-rating-app.firebaseapp.com",
-  projectId: "burger-rating-app",
-  storageBucket: "burger-rating-app.firebasestorage.app",
-  messagingSenderId: "148456854796",
-  appId: "1:148456854796:web:a750700ca0b7eb65d1a529"
-};
+import { getFirebase, loadFirestoreSdk } from './firebase.js';
+import { watchAuth, logOut } from './auth.js';
+import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
+import AuthScreen from './AuthScreen.jsx';
 
 const CATEGORIES = {
   burgers: {
@@ -119,8 +114,10 @@ export default function NYCBurgerRanker() {
   
   // User profile & social features
   const [username, setUsername] = useState('');
-  const [hasUsername, setHasUsername] = useState(false);
-  const [tempUsername, setTempUsername] = useState('');
+  const [initError, setInitError] = useState('');
+  const [saveStatus, setSaveStatus] = useState(''); // '', 'saving', 'saved', 'error'
+  // JSON of the lists as last loaded or saved; null until the signed-in user's lists have loaded.
+  const lastSavedRankingsRef = useRef(null);
   const [following, setFollowing] = useState([]);
   const [followers, setFollowers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -143,214 +140,161 @@ export default function NYCBurgerRanker() {
   };
 
   useEffect(() => {
-    const initFirebase = async () => {
-      try {
-        const firebaseApp = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
-        const firebaseFirestore = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-        
-        const app = firebaseApp.initializeApp(FIREBASE_CONFIG);
-        const firestore = firebaseFirestore.getFirestore(app);
-        setDb(firestore);
+    let unsubscribe = null;
+    let cancelled = false;
 
-        let storedUserId = localStorage.getItem('burger-ranker-user-id');
-        if (!storedUserId) {
-          storedUserId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          localStorage.setItem('burger-ranker-user-id', storedUserId);
-        }
-        setUserId(storedUserId);
-
-        await loadData(firestore, storedUserId);
-      } catch (error) {
-        console.error('Firebase initialization error:', error);
-        alert('Could not connect to database. Please check your Firebase configuration.');
+    watchAuth(async (user) => {
+      if (!user) {
+        resetUserState();
         setIsLoading(false);
+        return;
       }
-    };
+      setIsLoading(true);
+      await loadData(user);
+    })
+      .then((unsub) => {
+        if (cancelled) unsub();
+        else unsubscribe = unsub;
+      })
+      .catch((error) => {
+        console.error('Firebase initialization error:', error);
+        setInitError('Could not connect to the database. Please check your connection and Firebase configuration.');
+        setIsLoading(false);
+      });
 
-    initFirebase();
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
-  const loadData = async (firestore, uid) => {
+  // Save lists automatically shortly after each change, so they are there on the next visit.
+  useEffect(() => {
+    if (!userId || lastSavedRankingsRef.current === null) return;
+    const serialized = JSON.stringify(rankings);
+    if (serialized === lastSavedRankingsRef.current) return;
+
+    setSaveStatus('saving');
+    const timer = setTimeout(async () => {
+      try {
+        await saveRankings(userId, JSON.parse(serialized));
+        lastSavedRankingsRef.current = serialized;
+        setSaveStatus('saved');
+      } catch (error) {
+        console.error('Error saving lists:', error);
+        setSaveStatus('error');
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [rankings, userId]);
+
+  const resetUserState = () => {
+    lastSavedRankingsRef.current = null;
+    setUserId(null);
+    setUsername('');
+    setRankings(normalizeRankings(null));
+    setSubmitted({});
+    setFollowing([]);
+    setFollowers([]);
+    setAllUsers([]);
+    setSelectedUserProfile(null);
+    setSaveStatus('');
+    setView('ranking');
+    switchCategory('burgers');
+  };
+
+  const loadData = async (user) => {
     try {
-      const { collection, query, getDocs, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      // Load user profile
-      const userDocRef = doc(firestore, 'users', uid);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setRankings(normalizeRankings(data));
-        if (data.username) {
-          setUsername(data.username);
-          setHasUsername(true);
-        }
-        setFollowing(data.following || []);
+      const { db: firestore } = await getFirebase();
+      setDb(firestore);
+
+      let profile = await loadUser(user.uid);
+      if (!profile) {
+        // Sign-up was interrupted before the profile was written.
+        await createProfile(user.uid, user.username);
+        profile = await loadUser(user.uid);
       }
 
-      // Load all users for discovery
-      await loadAllUsers(firestore);
-      
-      // Load followers
-      await loadFollowers(firestore, uid);
+      const loadedRankings = normalizeRankings(profile);
+      lastSavedRankingsRef.current = JSON.stringify(loadedRankings);
+      setRankings(loadedRankings);
+      setUsername(profile?.username || user.username);
+      setFollowing(profile?.following || []);
+      setUserId(user.uid);
 
-      await updateLeaderboard(firestore);
+      await Promise.all([
+        loadAllUsers(),
+        loadFollowers(user.uid),
+        updateLeaderboard(firestore),
+      ]);
     } catch (error) {
       console.error('Error loading data:', error);
+      setUserId(user.uid);
     }
     setIsLoading(false);
   };
 
-  const loadAllUsers = async (firestore) => {
+  const loadAllUsers = async () => {
     try {
-      const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      const usersRef = collection(firestore, 'users');
-      const snapshot = await getDocs(usersRef);
-      
-      const users = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.username) {
-          users.push({
-            userId: doc.id,
-            username: data.username,
-            rankingCount: countRanked(normalizeRankings(data)),
-            updatedAt: data.updatedAt,
-          });
-        }
-      });
-      
-      setAllUsers(users);
+      const users = await fetchAllUsers();
+      setAllUsers(users.map((data) => ({
+        userId: data.userId,
+        username: data.username,
+        rankingCount: countRanked(normalizeRankings(data)),
+        updatedAt: data.updatedAt,
+      })));
     } catch (error) {
       console.error('Error loading users:', error);
     }
   };
 
-  const loadFollowers = async (firestore, uid) => {
+  const loadFollowers = async (uid) => {
     try {
-      const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      const usersRef = collection(firestore, 'users');
-      const q = query(usersRef, where('following', 'array-contains', uid));
-      const snapshot = await getDocs(q);
-      
-      const followersList = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.username) {
-          followersList.push(data.username);
-        }
-      });
-      
-      setFollowers(followersList);
+      setFollowers(await fetchFollowers(uid));
     } catch (error) {
       console.error('Error loading followers:', error);
     }
   };
 
-  const setUsernameHandler = async () => {
-    if (!tempUsername.trim()) {
-      alert('Please enter a username');
-      return;
-    }
-
-    if (tempUsername.length < 3) {
-      alert('Username must be at least 3 characters');
-      return;
-    }
-
-    if (!db) {
-      alert('Database not ready yet. Please wait a moment and try again.');
-      console.error('Database not initialized');
-      return;
-    }
-
-    if (!userId) {
-      alert('User ID not ready. Please refresh the page.');
-      console.error('User ID not set');
-      return;
-    }
-
+  const handleLogOut = async () => {
     try {
-      const { doc, setDoc, getDoc, collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      console.log('Checking if username exists...');
-      // Check if username is taken
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('username', '==', tempUsername.trim()));
-      const snapshot = await getDocs(q);
-      
-      if (!snapshot.empty) {
-        alert('Username already taken. Please choose another.');
-        return;
+      // Flush an autosave that hasn't fired yet so nothing is lost.
+      const serialized = JSON.stringify(rankings);
+      if (lastSavedRankingsRef.current !== null && serialized !== lastSavedRankingsRef.current) {
+        await saveRankings(userId, rankings);
       }
-
-      console.log('Creating user profile...');
-      const userDocRef = doc(db, 'users', userId);
-      await setDoc(userDocRef, {
-        username: tempUsername.trim(),
-        ranking: [],
-        rankings: {},
-        following: [],
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-
-      console.log('Username set successfully!');
-      setUsername(tempUsername.trim());
-      setHasUsername(true);
-      setTempUsername('');
-      await loadAllUsers(db);
+      await logOut();
     } catch (error) {
-      console.error('Error setting username:', error);
-      alert(`Error setting username: ${error.message}. Please check your Firebase configuration.`);
+      console.error('Error logging out:', error);
     }
   };
 
   const followUser = async (targetUserId) => {
-    if (!db || !userId || !hasUsername) return;
+    if (!userId || targetUserId === userId) return;
 
     try {
-      const { doc, updateDoc, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      const userDocRef = doc(db, 'users', userId);
-      await updateDoc(userDocRef, {
-        following: arrayUnion(targetUserId)
-      });
-
-      setFollowing([...following, targetUserId]);
-      await loadAllUsers(db);
+      await saveFollowing(userId, targetUserId, true);
+      setFollowing(prev => (prev.includes(targetUserId) ? prev : [...prev, targetUserId]));
     } catch (error) {
       console.error('Error following user:', error);
     }
   };
 
   const unfollowUser = async (targetUserId) => {
-    if (!db || !userId) return;
+    if (!userId) return;
 
     try {
-      const { doc, updateDoc, arrayRemove } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      const userDocRef = doc(db, 'users', userId);
-      await updateDoc(userDocRef, {
-        following: arrayRemove(targetUserId)
-      });
-
-      setFollowing(following.filter(id => id !== targetUserId));
-      await loadAllUsers(db);
+      await saveFollowing(userId, targetUserId, false);
+      setFollowing(prev => prev.filter(id => id !== targetUserId));
     } catch (error) {
       console.error('Error unfollowing user:', error);
     }
   };
 
   const viewUserProfile = async (targetUserId) => {
-    if (!db) return;
-
     try {
-      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      const userDocRef = doc(db, 'users', targetUserId);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (userDoc.exists()) {
-        const data = userDoc.data();
+      const data = await loadUser(targetUserId);
+      if (data) {
         setSelectedUserProfile({
           userId: targetUserId,
           username: data.username,
@@ -366,7 +310,7 @@ export default function NYCBurgerRanker() {
 
   const updateLeaderboard = async (firestore) => {
     try {
-      const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+      const { collection, getDocs } = await loadFirestoreSdk();
       
       const submissionsRef = collection(firestore, 'submissions');
       const snapshot = await getDocs(submissionsRef);
@@ -547,37 +491,15 @@ export default function NYCBurgerRanker() {
       return;
     }
 
-    if (!hasUsername) {
-      alert('Please set a username first!');
-      return;
-    }
-
-    if (!db || !userId) {
-      alert('Database not ready. Please refresh and try again.');
+    if (!userId) {
+      alert('Please log in first!');
       return;
     }
 
     try {
-      const { doc, setDoc, collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-      
-      const userDocRef = doc(db, 'users', userId);
-      await setDoc(userDocRef, {
-        username: username,
-        rankings: rankings,
-        ranking: rankings.burgers, // legacy field read by older clients
-        following: following,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-
-      const submissionsRef = collection(db, 'submissions');
-      await addDoc(submissionsRef, {
-        userId: userId,
-        username: username,
-        category: category,
-        items: rankedItems,
-        ...(category === 'burgers' && { burgers: rankedItems }), // legacy field
-        timestamp: new Date().toISOString(),
-      });
+      await saveRankings(userId, rankings);
+      lastSavedRankingsRef.current = JSON.stringify(rankings);
+      await submitRanking(userId, username, category, rankedItems);
 
       setSubmitted(prev => ({ ...prev, [category]: true }));
       await updateLeaderboard(db);
@@ -599,58 +521,19 @@ export default function NYCBurgerRanker() {
     );
   }
 
-  // Username setup screen
-  if (!hasUsername) {
+  if (initError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-          <div className="text-center mb-6">
-            <div className="text-5xl mb-4">🍔</div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Welcome to NYC Top 10!</h1>
-            <p className="text-gray-600">Choose a username to get started</p>
-          </div>
-          
-          {!db ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-              <p className="text-gray-600">Connecting to database...</p>
-              <p className="text-xs text-gray-500 mt-2">If this takes too long, check your Firebase config</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                <input
-                  type="text"
-                  value={tempUsername}
-                  onChange={(e) => setTempUsername(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && setUsernameHandler()}
-                  placeholder="Enter username (min 3 characters)"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-              </div>
-              
-              <button
-                onClick={setUsernameHandler}
-                className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold hover:bg-orange-600 transition-colors"
-              >
-                Create Profile
-              </button>
-              
-              <p className="text-xs text-gray-500 text-center">
-                You'll be able to follow other users and see their burger, martini and pizza rankings!
-              </p>
-              
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-800">
-                  <strong>Tip:</strong> Make sure you've set up Firebase correctly. Check the browser console (F12) if you see errors.
-                </p>
-              </div>
-            </div>
-          )}
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+          <div className="text-5xl mb-4">🍔</div>
+          <p className="text-gray-700">{initError}</p>
         </div>
       </div>
     );
+  }
+
+  if (!userId) {
+    return <AuthScreen />;
   }
 
   const filteredLeaderboard = selectedTags.length > 0
@@ -681,7 +564,19 @@ export default function NYCBurgerRanker() {
             <span className="text-gray-600">{following.length} following</span>
             <span className="text-gray-500">•</span>
             <span className="text-gray-600">{followers.length} followers</span>
+            <span className="text-gray-500">•</span>
+            <button onClick={handleLogOut} className="text-gray-600 hover:text-orange-600 flex items-center gap-1">
+              <LogOut className="w-4 h-4" />
+              Log out
+            </button>
           </div>
+          {saveStatus && (
+            <div className={`mt-1 text-xs ${saveStatus === 'error' ? 'text-red-600' : 'text-gray-500'}`}>
+              {saveStatus === 'saving' && 'Saving your lists...'}
+              {saveStatus === 'saved' && 'All changes saved'}
+              {saveStatus === 'error' && 'Could not save your lists. Check your connection.'}
+            </div>
+          )}
         </div>
 
         {view !== 'following' && (
