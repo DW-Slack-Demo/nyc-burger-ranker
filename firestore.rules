@@ -49,5 +49,49 @@ service cloud.firestore {
         && (resource == null || resource.data.userId == request.auth.uid);
       allow delete: if false;
     }
+
+    // Photos of spots on people's lists (see photoStore.js). Each account has 30 numbered
+    // slots ({uid}_1 to {uid}_30), so nobody can fill the database. Photos can't be edited
+    // once posted, and only the person who posted one can delete it.
+    function isOwnPhotoSlot(photoId) {
+      return request.auth != null
+        && photoId.matches(request.auth.uid + '_([1-9]|[12][0-9]|30)');
+    }
+
+    function isJpeg(value, maxSize) {
+      return value is string
+        && value.size() <= maxSize
+        && value.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+');
+    }
+
+    match /photos/{photoId} {
+      allow read: if request.auth != null;
+      allow create: if isOwnPhotoSlot(photoId)
+        && request.resource.data.keys().hasOnly(['userId', 'username', 'category', 'placeId', 'placeName', 'thumb', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.username is string
+        && ownsUsername(request.resource.data.username.lower())
+        && request.resource.data.category in ['burgers', 'martinis', 'pizza']
+        && request.resource.data.placeId is string
+        && request.resource.data.placeId.matches('[A-Za-z0-9_-]{1,150}')
+        && request.resource.data.placeName is string
+        && request.resource.data.placeName.size() <= 200
+        && isJpeg(request.resource.data.thumb, 60000)
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 40;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // The full-size picture for each photo, kept apart so lists of photos stay small.
+    match /photoFiles/{photoId} {
+      allow read: if request.auth != null;
+      allow create: if isOwnPhotoSlot(photoId)
+        && request.resource.data.keys().hasOnly(['userId', 'image'])
+        && request.resource.data.userId == request.auth.uid
+        && isJpeg(request.resource.data.image, 400000);
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
   }
 }
