@@ -28,11 +28,45 @@ browser only, so other people and other devices won't see it.
 3. Deploy the security rules so people can only change their own lists:
    `npx firebase-tools deploy --only firestore:rules --project nyc-top-10`
 
+## Finding spots
+
+The **Find a spot** search looks places up on Google Maps (restaurants, bars and cafes in
+the five boroughs) and only lets people add a real listing, never whatever they typed. Each
+spot is saved with its Google place id, so "4 Charles" and "4 Charles Prime" are the same
+place on everyone's list and on the leaderboard. Searching for one of the recommended spots
+finds the recommended entry, so it counts together with people who added it from the list.
+
+The Google key lives in the same Cloudflare helper as the AI Finder (see below), so it
+never appears in the site. Until it is set up, search only covers the recommended spots.
+
+Spots saved before this were typed in by hand. They show a "Match it to the official
+listing" link in your list; picking the listing keeps the spot's rank, stars and notes.
+Until they are matched, the leaderboard counts hand-typed spots with the same name together.
+
+### Setup
+
+1. Open https://console.cloud.google.com and pick the **nyc-top-10** project (the
+   Firebase project is also a Google Cloud project).
+2. Google requires a billing account for Maps, even within the free monthly allowance:
+   **Billing** > link a billing account.
+3. **APIs & Services** > **Library**, search **Places API (New)** and click **Enable**.
+4. **APIs & Services** > **Credentials** > **Create credentials** > **API key**. Click
+   **Edit API key**, under **API restrictions** choose **Restrict key** and tick only
+   **Places API (New)**, then **Save**. Copy the key.
+5. Optional but recommended: **APIs & Services** > **Places API (New)** > **Quotas**, and
+   lower the daily limit for Text Search requests (for example to 150) so usage stays in the free
+   allowance.
+6. In GitHub, Settings > Secrets and variables > Actions > **New repository secret**:
+   name `GOOGLE_PLACES_API_KEY`, value the key.
+7. Actions > **Deploy AI search helper** > **Run workflow**. The search bar uses the
+   helper at `VITE_AI_SEARCH_URL` (its `/places` address), so nothing else needs changing.
+
 ## AI Finder
 
 The AI Finder takes a plain-language request ("a dirty martini in downtown Brooklyn")
 and suggests spots across all three categories, each with a button to add it to the
-right list. It needs an Anthropic API key, and a key can't live in this static site
+right list. With the Google key set up, each suggestion is matched to its official Google
+Maps listing, and ones Google can't find in NYC are left out. It needs an Anthropic API key, and a key can't live in this static site
 (anyone could read it from the page), so the search goes through a tiny server in
 `ai-search/`, a Cloudflare Worker that keeps the key as a secret. Until it is set up,
 the AI Finder says it isn't switched on and the rest of the app works as before.

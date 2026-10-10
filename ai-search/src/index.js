@@ -1,10 +1,24 @@
-// AI Finder backend for NYC Top 10. The web app is a static site, so it can't hold an
-// Anthropic API key; it sends the search here and this Worker calls Claude with the key
-// kept as a Cloudflare secret.
+// Backend for Top Shelf. The web app is a static site, so it can't hold API keys; it
+// sends searches here and this Worker calls Google Places and Claude with the keys kept as
+// Cloudflare secrets.
+//   POST /places {query}  -> official Google Maps listings for NYC food and drink spots
+//   POST /        {query}  -> AI Finder recommendations
 import Anthropic from '@anthropic-ai/sdk';
 
 const CATEGORIES = ['burgers', 'martinis', 'pizza', 'other'];
 const MAX_QUERY_LENGTH = 300;
+
+// The five boroughs, so "Joe's" finds the one on Carmine St and not one in New Jersey.
+const NYC_BOUNDS = {
+  rectangle: {
+    low: { latitude: 40.4774, longitude: -74.2591 },
+    high: { latitude: 40.9176, longitude: -73.7004 },
+  },
+};
+
+// Google tags every restaurant, bar and cafe with one of these, so anything else (a
+// street, a hotel lobby, a shop) is left out of the results.
+const FOOD_AND_DRINK = /^(food|restaurant|bar|pub|cafe|bakery|meal_takeaway|meal_delivery|night_club|steak_house|coffee_shop|.+_(restaurant|bar))$/;
 
 const SYSTEM_PROMPT = `You recommend places to eat and drink in New York City for an app where friends rank their top 10 burgers, martinis and pizza spots.
 
@@ -75,6 +89,88 @@ async function findPlaces(env, query) {
   return JSON.parse(text);
 }
 
+async function searchPlaces(env, textQuery, pageSize) {
+  const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.types,places.location',
+    },
+    body: JSON.stringify({ textQuery, pageSize, locationRestriction: NYC_BOUNDS, languageCode: 'en' }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('Google Places error:', response.status, JSON.stringify(data.error || data));
+    throw new PlacesError(response.status);
+  }
+  return (data.places || [])
+    .filter((p) => (p.types || []).some((t) => FOOD_AND_DRINK.test(t)))
+    .map((p) => ({
+      id: p.id,
+      name: p.displayName?.text || '',
+      address: (p.formattedAddress || '').replace(/, (USA|United States)$/, ''),
+      location: p.location ? { lat: p.location.latitude, lng: p.location.longitude } : null,
+    }));
+}
+
+class PlacesError extends Error {
+  constructor(status) {
+    super(`Google Places returned ${status}`);
+    this.status = status;
+  }
+}
+
+// Swaps each AI suggestion for its official Google listing, so it saves with the same id
+// as the same place found through the search bar. Suggestions Google can't find in NYC
+// are dropped rather than saved under a made-up name.
+async function attachListings(env, results) {
+  const matched = await Promise.all(results.map(async (r) => {
+    try {
+      const [place] = await searchPlaces(env, `${r.name}, ${r.address}`, 1);
+      return place ? { ...r, placeId: place.id, address: place.address, location: place.location } : null;
+    } catch {
+      return null;
+    }
+  }));
+  return matched.filter(Boolean);
+}
+
+async function readQuery(request) {
+  try {
+    return String((await request.json()).query || '').trim();
+  } catch {
+    return null;
+  }
+}
+
+function checkQuery(query, cors) {
+  if (query === null) return json({ error: 'Send JSON like {"query": "..."}.' }, 400, cors);
+  if (!query) return json({ error: 'Type what you are looking for.' }, 400, cors);
+  if (query.length > MAX_QUERY_LENGTH) {
+    return json({ error: `Keep it under ${MAX_QUERY_LENGTH} characters.` }, 400, cors);
+  }
+  return null;
+}
+
+async function handlePlaces(request, env, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: "Official restaurant search isn't switched on yet." }, 503, cors);
+  }
+  const query = await readQuery(request);
+  const invalid = checkQuery(query, cors);
+  if (invalid) return invalid;
+
+  try {
+    return json({ places: await searchPlaces(env, query, 10) }, 200, cors);
+  } catch (error) {
+    if (error instanceof PlacesError && error.status === 429) {
+      return json({ error: 'Too many searches right now. Try again in a minute.' }, 429, cors);
+    }
+    return json({ error: 'Could not reach Google Maps. Try again.' }, 502, cors);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request, env);
@@ -82,23 +178,22 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, cors);
 
+    if (new URL(request.url).pathname.replace(/\/+$/, '') === '/places') {
+      return handlePlaces(request, env, cors);
+    }
+
     if (!env.ANTHROPIC_API_KEY) {
       return json({ error: 'The AI search server is missing its Anthropic API key.' }, 500, cors);
     }
 
-    let query;
-    try {
-      query = String((await request.json()).query || '').trim();
-    } catch {
-      return json({ error: 'Send JSON like {"query": "..."}.' }, 400, cors);
-    }
-    if (!query) return json({ error: 'Type what you are looking for.' }, 400, cors);
-    if (query.length > MAX_QUERY_LENGTH) {
-      return json({ error: `Keep it under ${MAX_QUERY_LENGTH} characters.` }, 400, cors);
-    }
+    const query = await readQuery(request);
+    const invalid = checkQuery(query, cors);
+    if (invalid) return invalid;
 
     try {
-      return json(await findPlaces(env, query), 200, cors);
+      const found = await findPlaces(env, query);
+      if (env.GOOGLE_PLACES_API_KEY) found.results = await attachListings(env, found.results || []);
+      return json(found, 200, cors);
     } catch (error) {
       if (error instanceof Anthropic.RateLimitError) {
         return json({ error: 'Too many searches right now. Try again in a minute.' }, 429, cors);
