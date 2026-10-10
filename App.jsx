@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut } from 'lucide-react';
+import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut, Bookmark, BookmarkPlus, Check } from 'lucide-react';
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
 import { watchAuth, logOut, addEmail } from './auth.js';
-import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
+import { loadUser, createProfile, saveLists, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
 import { fuzzySearch, normalize } from './fuzzySearch.js';
 
@@ -133,6 +133,23 @@ const normalizeRankings = (data) => {
 
 const countRanked = (rankings) => CATEGORY_KEYS.reduce((sum, key) => sum + rankings[key].length, 0);
 
+// Spots people want to try, one list per category.
+const MAX_WANT_TO_TRY = 50;
+const normalizeWantToTry = (data) => {
+  const lists = { ...(data?.wantToTry || {}) };
+  CATEGORY_KEYS.forEach((key) => { lists[key] = Array.isArray(lists[key]) ? lists[key] : []; });
+  return lists;
+};
+
+// Two lists hold the same place when the listing ids match. Hand-typed spots have one-off
+// ids, so those are compared by name.
+const placeKey = (item) => (item.place_id && !isUnverified(item) ? item.place_id : `name:${normalize(item.name || '')}`);
+const hasPlace = (list, item) => list.some((other) => placeKey(other) === placeKey(item));
+
+// How many places both you and one person you follow want to try, across all categories.
+const sharedWantCount = (mine, theirs) =>
+  CATEGORY_KEYS.reduce((sum, key) => sum + mine[key].filter((item) => hasPlace(theirs[key], item)).length, 0);
+
 export default function NYCBurgerRanker() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -142,10 +159,11 @@ export default function NYCBurgerRanker() {
   const [replacingId, setReplacingId] = useState(null);
   const [category, setCategory] = useState('burgers');
   const [rankings, setRankings] = useState(() => normalizeRankings(null));
+  const [wantToTry, setWantToTry] = useState(() => normalizeWantToTry(null));
   const [leaderboards, setLeaderboards] = useState(() => normalizeRankings(null));
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragSource, setDragSource] = useState(null);
-  const [view, setView] = useState('ranking'); // 'ranking', 'leaderboard', 'following', 'profile'
+  const [view, setView] = useState('ranking'); // 'ranking', 'wantToTry', 'leaderboard', 'following', 'profile'
   const [submitted, setSubmitted] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [expandedComments, setExpandedComments] = useState({});
@@ -180,6 +198,7 @@ export default function NYCBurgerRanker() {
   const rankedItems = rankings[category];
   const setRankedItems = (items) => setRankings(prev => ({ ...prev, [category]: items }));
   const leaderboard = leaderboards[category];
+  const wantList = wantToTry[category];
 
   const switchCategory = (key) => {
     setCategory(key);
@@ -225,13 +244,13 @@ export default function NYCBurgerRanker() {
   // Save lists automatically shortly after each change, so they are there on the next visit.
   useEffect(() => {
     if (!userId || lastSavedRankingsRef.current === null) return;
-    const serialized = JSON.stringify(rankings);
+    const serialized = JSON.stringify({ rankings, wantToTry });
     if (serialized === lastSavedRankingsRef.current) return;
 
     setSaveStatus('saving');
     const timer = setTimeout(async () => {
       try {
-        await saveRankings(userId, JSON.parse(serialized));
+        await saveLists(userId, JSON.parse(serialized));
         lastSavedRankingsRef.current = serialized;
         setSaveStatus('saved');
       } catch (error) {
@@ -240,7 +259,7 @@ export default function NYCBurgerRanker() {
       }
     }, 800);
     return () => clearTimeout(timer);
-  }, [rankings, userId]);
+  }, [rankings, wantToTry, userId]);
 
   const resetUserState = () => {
     lastSavedRankingsRef.current = null;
@@ -250,6 +269,7 @@ export default function NYCBurgerRanker() {
     setNewEmail('');
     setEmailStatus({ busy: false, error: '', sentTo: '' });
     setRankings(normalizeRankings(null));
+    setWantToTry(normalizeWantToTry(null));
     setSubmitted({});
     setFollowing([]);
     setFollowers([]);
@@ -273,8 +293,10 @@ export default function NYCBurgerRanker() {
       }
 
       const loadedRankings = normalizeRankings(profile);
-      lastSavedRankingsRef.current = JSON.stringify(loadedRankings);
+      const loadedWantToTry = normalizeWantToTry(profile);
+      lastSavedRankingsRef.current = JSON.stringify({ rankings: loadedRankings, wantToTry: loadedWantToTry });
       setRankings(loadedRankings);
+      setWantToTry(loadedWantToTry);
       setUsername(profile?.username || user.username);
       setFollowing(profile?.following || []);
       setUserId(user.uid);
@@ -294,12 +316,17 @@ export default function NYCBurgerRanker() {
   const loadAllUsers = async () => {
     try {
       const users = await fetchAllUsers();
-      setAllUsers(users.map((data) => ({
-        userId: data.userId,
-        username: data.username,
-        rankingCount: countRanked(normalizeRankings(data)),
-        updatedAt: data.updatedAt,
-      })));
+      setAllUsers(users.map((data) => {
+        const userRankings = normalizeRankings(data);
+        return {
+          userId: data.userId,
+          username: data.username,
+          rankings: userRankings,
+          wantToTry: normalizeWantToTry(data),
+          rankingCount: countRanked(userRankings),
+          updatedAt: data.updatedAt,
+        };
+      }));
     } catch (error) {
       console.error('Error loading users:', error);
     }
@@ -316,9 +343,9 @@ export default function NYCBurgerRanker() {
   const handleLogOut = async () => {
     try {
       // Flush an autosave that hasn't fired yet so nothing is lost.
-      const serialized = JSON.stringify(rankings);
+      const serialized = JSON.stringify({ rankings, wantToTry });
       if (lastSavedRankingsRef.current !== null && serialized !== lastSavedRankingsRef.current) {
-        await saveRankings(userId, rankings);
+        await saveLists(userId, { rankings, wantToTry });
       }
       await logOut();
     } catch (error) {
@@ -367,6 +394,7 @@ export default function NYCBurgerRanker() {
           userId: targetUserId,
           username: data.username,
           rankings: normalizeRankings(data),
+          wantToTry: normalizeWantToTry(data),
           updatedAt: data.updatedAt,
         });
         setView('profile');
@@ -577,7 +605,67 @@ export default function NYCBurgerRanker() {
       tags: place.tags || [],
       ...(place.location && { location: place.location }),
     }] }));
+    // Once it's ranked it has been tried, so it comes off the want-to-try list.
+    setWantToTry(prev => ({ ...prev, [key]: prev[key].filter(w => placeKey(w) !== placeKey(place)) }));
     return true;
+  };
+
+  // Saves a spot to the want-to-try list for a category (the open one unless another is named).
+  const addToWantToTry = (place, key = category) => {
+    const target = CATEGORIES[key];
+    if (hasPlace(rankings[key], place)) {
+      alert(`${place.name} is already in your ${target.label.toLowerCase()} ranking, so you've tried it!`);
+      return false;
+    }
+    if (hasPlace(wantToTry[key], place)) {
+      alert(`${place.name} is already on your want-to-try list.`);
+      return false;
+    }
+    if (wantToTry[key].length >= MAX_WANT_TO_TRY) {
+      alert(`Your want-to-try list holds up to ${MAX_WANT_TO_TRY} ${target.plural}. Remove one to add another.`);
+      return false;
+    }
+    setWantToTry(prev => ({ ...prev, [key]: [...prev[key], {
+      place_id: place.place_id,
+      name: place.name,
+      address: place.address,
+      tags: place.tags || [],
+      ...(place.location && { location: place.location }),
+      addedAt: new Date().toISOString(),
+    }] }));
+    return true;
+  };
+
+  const removeFromWantToTry = (place) => {
+    setWantToTry(prev => ({ ...prev, [category]: prev[category].filter(w => placeKey(w) !== placeKey(place)) }));
+  };
+
+  // "Tried it": moves the spot into the ranking so it can be rated.
+  const markTried = (place) => {
+    if (!addToList(place)) return;
+    setView('ranking');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const saveSearchResultForLater = (place) => {
+    if (!addToWantToTry(place)) return;
+    setSearchResults([]);
+    setSearchMessage('');
+    setSearchQuery('');
+  };
+
+  // The search box is shared by the ranking and want-to-try pages, so leftover results are
+  // cleared when moving between pages.
+  const openView = (key) => {
+    if (key !== view) {
+      setSearchResults([]);
+      setSearchMessage('');
+      setSearchQuery('');
+      setReplacingId(null);
+    }
+    setView(key);
+    // Pick up spots people you follow added since you signed in.
+    if (key === 'wantToTry' || key === 'following') loadAllUsers();
   };
 
   const addBurger = (place) => {
@@ -637,6 +725,7 @@ export default function NYCBurgerRanker() {
     const items = [...rankedItems];
     items.splice(targetIndex, 0, { ...burger, rating: 5, comments: '' });
     setRankedItems(items);
+    setWantToTry(prev => ({ ...prev, [category]: prev[category].filter(w => placeKey(w) !== placeKey(burger)) }));
     handleDragEnd();
   };
 
@@ -652,8 +741,8 @@ export default function NYCBurgerRanker() {
     }
 
     try {
-      await saveRankings(userId, rankings);
-      lastSavedRankingsRef.current = JSON.stringify(rankings);
+      await saveLists(userId, { rankings, wantToTry });
+      lastSavedRankingsRef.current = JSON.stringify({ rankings, wantToTry });
       await submitRanking(userId, username, category, rankedItems);
 
       setSubmitted(prev => ({ ...prev, [category]: true }));
@@ -725,8 +814,113 @@ export default function NYCBurgerRanker() {
 
   const followingUsers = allUsers.filter(u => following.includes(u.userId));
 
+  // For each spot on your want-to-try list: who you follow also wants to try it, and who
+  // has already ranked it (and where).
+  const wantConnections = wantList.map((item) => ({
+    item,
+    alsoWant: followingUsers.filter(u => hasPlace(u.wantToTry[category], item)).map(u => u.username),
+    rankedBy: followingUsers.flatMap((u) => {
+      const index = u.rankings[category].findIndex(ranked => placeKey(ranked) === placeKey(item));
+      return index >= 0 ? [{ username: u.username, rank: index + 1 }] : [];
+    }),
+  }));
+  const sharedCount = wantConnections.filter(c => c.alsoWant.length > 0).length;
+
+  // Spots people you follow want to try that aren't on your lists yet, most wanted first.
+  const followsWant = Object.values(followingUsers.reduce((byPlace, u) => {
+    u.wantToTry[category].forEach((item) => {
+      if (hasPlace(wantList, item) || hasPlace(rankedItems, item)) return;
+      const key = placeKey(item);
+      byPlace[key] = byPlace[key] || { item, usernames: [] };
+      if (!byPlace[key].usernames.includes(u.username)) byPlace[key].usernames.push(u.username);
+    });
+    return byPlace;
+  }, {})).sort((a, b) => b.usernames.length - a.usernames.length || a.item.name.localeCompare(b.item.name));
+
+  const listNames = (names) => names.map(n => `@${n}`).join(', ');
+
+  // Search for official listings, used by both the ranking and want-to-try pages.
+  const searchPanel = (
+    <div className={panel}>
+      <div className={`${eyebrow} mb-3`}>{view === 'wantToTry' ? 'Find a spot to try' : 'Find a spot'}</div>
+      {replacingId && (
+        <div className="mb-3 text-sm text-ink-soft bg-wine-light border border-wine/20 rounded-sm px-3 py-2 flex items-center justify-between gap-3">
+          <span>Pick the official listing to replace the one you typed.</span>
+          <button onClick={cancelMatching} className="text-xs uppercase tracking-wider text-wine hover:text-wine-dark">Cancel</button>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-3.5 text-ink-muted w-4 h-4" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
+            maxLength={300}
+            placeholder={cat.searchPlaceholder}
+            className={`${input} pl-9`}
+          />
+        </div>
+        <button
+          onClick={() => searchBurgers()}
+          disabled={isSearching}
+          className={`${primaryButton} px-5`}
+        >
+          {isSearching ? 'Searching...' : 'Search'}
+        </button>
+      </div>
+
+      {searchMessage && <p className="mt-3 text-sm italic text-ink-muted">{searchMessage}</p>}
+
+      {searchResults.length > 0 && (
+        <div className="mt-4 divide-y divide-line border-y border-line">
+          {searchResults.map((place) => (
+            <div key={place.place_id} className="flex items-center justify-between gap-3 py-3">
+              <div className="flex-1">
+                <div className="font-display text-lg text-ink">{place.name}</div>
+                <div className="text-sm text-ink-muted flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {place.address}
+                </div>
+              </div>
+              {view === 'wantToTry' ? (
+                <button
+                  onClick={() => saveSearchResultForLater(place)}
+                  className={`${primaryButton} shrink-0 px-4 py-2 flex items-center gap-1`}
+                >
+                  <BookmarkPlus className="w-3.5 h-3.5" />Want to try
+                </button>
+              ) : (
+                <div className="shrink-0 flex items-center gap-2">
+                  {!replacingId && (
+                    <button
+                      onClick={() => saveSearchResultForLater(place)}
+                      aria-label={`Save ${place.name} to want to try`}
+                      title="Save to want to try"
+                      className={`${quietButton} p-2`}
+                    >
+                      <BookmarkPlus className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => (replacingId ? replaceWithListing(place) : addBurger(place))}
+                    className={`${primaryButton} px-4 py-2 flex items-center gap-1`}
+                  >
+                    {replacingId ? 'Use this' : <><Plus className="w-3.5 h-3.5" />Add</>}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const views = [
     { key: 'ranking', label: 'My Ranking' },
+    { key: 'wantToTry', label: 'Want to Try' },
     { key: 'leaderboard', label: 'Leaderboard' },
     { key: 'following', label: `Following (${following.length})` },
   ];
@@ -816,7 +1010,7 @@ export default function NYCBurgerRanker() {
             {views.map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setView(key)}
+                onClick={() => openView(key)}
                 className={`uppercase tracking-[0.18em] text-xs font-semibold whitespace-nowrap py-1 transition-colors ${
                   view === key ? 'text-wine' : 'text-ink-muted hover:text-ink'
                 }`}
@@ -830,61 +1024,7 @@ export default function NYCBurgerRanker() {
         {view === 'ranking' && (
           <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
             <div className="space-y-6">
-            {/* Search */}
-            <div className={panel}>
-              <div className={`${eyebrow} mb-3`}>Find a spot</div>
-              {replacingId && (
-                <div className="mb-3 text-sm text-ink-soft bg-wine-light border border-wine/20 rounded-sm px-3 py-2 flex items-center justify-between gap-3">
-                  <span>Pick the official listing to replace the one you typed.</span>
-                  <button onClick={cancelMatching} className="text-xs uppercase tracking-wider text-wine hover:text-wine-dark">Cancel</button>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-3.5 text-ink-muted w-4 h-4" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
-                    maxLength={300}
-                    placeholder={cat.searchPlaceholder}
-                    className={`${input} pl-9`}
-                  />
-                </div>
-                <button
-                  onClick={() => searchBurgers()}
-                  disabled={isSearching}
-                  className={`${primaryButton} px-5`}
-                >
-                  {isSearching ? 'Searching...' : 'Search'}
-                </button>
-              </div>
-
-              {searchMessage && <p className="mt-3 text-sm italic text-ink-muted">{searchMessage}</p>}
-
-              {searchResults.length > 0 && (
-                <div className="mt-4 divide-y divide-line border-y border-line">
-                  {searchResults.map((place) => (
-                    <div key={place.place_id} className="flex items-center justify-between gap-3 py-3">
-                      <div className="flex-1">
-                        <div className="font-display text-lg text-ink">{place.name}</div>
-                        <div className="text-sm text-ink-muted flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {place.address}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => (replacingId ? replaceWithListing(place) : addBurger(place))}
-                        className={`${primaryButton} shrink-0 px-4 py-2 flex items-center gap-1`}
-                      >
-                        {replacingId ? 'Use this' : <><Plus className="w-3.5 h-3.5" />Add</>}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {searchPanel}
 
             {/* AI Search */}
             <div className="bg-vert-light border border-vert/30 rounded-sm p-6">
@@ -1135,6 +1275,147 @@ export default function NYCBurgerRanker() {
           </div>
         )}
 
+        {view === 'wantToTry' && (
+          <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+            <div className="space-y-6">
+              {searchPanel}
+
+              {/* Recommended */}
+              <div className={panel}>
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <h3 className={heading}>{cat.recommendedTitle}</h3>
+                  <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
+                    {showRecommended ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {showRecommended && (
+                  <div>
+                    <p className="text-sm italic text-ink-muted mb-4">Haven't been yet? Tap the bookmark to save one for later.</p>
+                    <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
+                      {cat.recommended.map((place) => {
+                        const saved = hasPlace(wantList, place);
+                        const ranked = hasPlace(rankedItems, place);
+                        return (
+                          <div key={place.place_id} className="flex items-center justify-between py-3 px-2">
+                            <div>
+                              <div className="font-display text-lg text-ink leading-tight">{place.name}</div>
+                              <div className="text-xs text-ink-muted">{place.address}</div>
+                            </div>
+                            {ranked || saved ? (
+                              <span className="ml-2 shrink-0 text-[11px] uppercase tracking-wider text-ink-muted flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" />
+                                {ranked ? 'Ranked' : 'Saved'}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => addToWantToTry(place)}
+                                aria-label={`Save ${place.name} to want to try`}
+                                className="w-8 h-8 shrink-0 flex items-center justify-center border border-wine text-wine rounded-full hover:bg-wine hover:text-paper transition-colors ml-2"
+                              >
+                                <BookmarkPlus className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className={panel}>
+                <div className={eyebrow}>
+                  {wantList.length} saved{sharedCount > 0 && ` · ${sharedCount} in common with people you follow`}
+                </div>
+                <h2 className="font-display text-3xl text-ink mt-1 mb-5">{cat.label} to Try</h2>
+
+                {wantList.length === 0 ? (
+                  <div className="text-center py-16 border border-dashed border-line rounded-sm text-ink-muted">
+                    <Bookmark className="w-8 h-8 mx-auto mb-3 text-line" />
+                    <div className="font-display italic text-2xl text-ink-soft mb-2">Nothing saved yet</div>
+                    <p className="text-sm">Search for {cat.plural} you've been meaning to try, and see who you follow wants to go too.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-line border-y border-line">
+                    {wantConnections.map(({ item, alsoWant, rankedBy }) => (
+                      <div key={placeKey(item)} className="py-4 px-2 flex items-start gap-3">
+                        <Bookmark className="w-4 h-4 mt-1.5 text-wine fill-wine shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-display text-xl text-ink">{item.name}</div>
+                          <div className="text-sm text-ink-muted flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3" />
+                            {item.address}
+                          </div>
+                          {alsoWant.length > 0 && (
+                            <div className="mt-2 text-sm bg-wine-light border border-wine/20 rounded-sm px-3 py-1.5 text-wine flex items-start gap-1.5">
+                              <Users className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <span>{listNames(alsoWant)} {alsoWant.length === 1 ? 'wants' : 'want'} to try this too. Go together?</span>
+                            </div>
+                          )}
+                          {rankedBy.length > 0 && (
+                            <div className="mt-2 text-sm bg-brass-light border border-brass/40 rounded-sm px-3 py-1.5 text-ink-soft flex items-start gap-1.5">
+                              <Star className="w-3.5 h-3.5 mt-0.5 shrink-0 fill-brass text-brass" />
+                              <span>
+                                {rankedBy.map((r, i) => (
+                                  <span key={r.username}>{i > 0 && ', '}@{r.username} ranked it #{r.rank}</span>
+                                ))}
+                              </span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => markTried(item)}
+                            className="mt-3 text-xs uppercase tracking-wider font-semibold text-wine hover:text-wine-dark flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            Tried it? Rank it
+                          </button>
+                        </div>
+                        <button onClick={() => removeFromWantToTry(item)} aria-label={`Remove ${item.name}`} className="text-ink-muted hover:text-wine p-2">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className={panel}>
+                <div className={eyebrow}>From people you follow</div>
+                <h3 className={`${heading} mt-1 mb-4`}>On Their Lists</h3>
+                {followingUsers.length === 0 ? (
+                  <p className="text-sm italic text-ink-muted">
+                    Follow people to see the {cat.plural} they want to try.{' '}
+                    <button onClick={() => openView('following')} className="text-wine hover:text-wine-dark underline underline-offset-2">Find people</button>
+                  </p>
+                ) : followsWant.length === 0 ? (
+                  <p className="text-sm italic text-ink-muted">Nobody you follow has saved a {cat.singular} spot you haven't already.</p>
+                ) : (
+                  <div className="divide-y divide-line border-y border-line">
+                    {followsWant.map(({ item, usernames }) => (
+                      <div key={placeKey(item)} className="py-3 px-2 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
+                          <div className="text-xs text-ink-muted">{item.address}</div>
+                          <div className="text-xs text-wine mt-1">{listNames(usernames)} {usernames.length === 1 ? 'wants' : 'want'} to try it</div>
+                        </div>
+                        <button
+                          onClick={() => addToWantToTry(item)}
+                          className={`${quietButton} shrink-0 px-3 py-2 flex items-center gap-1`}
+                        >
+                          <BookmarkPlus className="w-3.5 h-3.5" />
+                          Me too
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {view === 'leaderboard' && (
           <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] items-start">
             <div className={panel}>
@@ -1268,7 +1549,12 @@ export default function NYCBurgerRanker() {
                     <div key={user.userId} className="flex items-center justify-between py-3 px-2 hover:bg-paper/60">
                       <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
                         <div className="font-semibold text-ink">@{user.username}</div>
-                        <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                        <div className="text-xs text-ink-muted">
+                          {user.rankingCount} spots ranked
+                          {sharedWantCount(wantToTry, user.wantToTry) > 0 && (
+                            <span className="text-wine"> · {sharedWantCount(wantToTry, user.wantToTry)} you both want to try</span>
+                          )}
+                        </div>
                       </div>
                       <button onClick={() => viewUserProfile(user.userId)} className={`${quietButton} px-4 py-2`}>
                         View Profile
@@ -1284,7 +1570,7 @@ export default function NYCBurgerRanker() {
         {view === 'profile' && selectedUserProfile && (
           <div className="max-w-3xl mx-auto">
             <button
-              onClick={() => setView('following')}
+              onClick={() => openView('following')}
               className="mb-4 text-sm italic text-wine hover:text-wine-dark"
             >
               ← Back to Following
@@ -1347,6 +1633,42 @@ export default function NYCBurgerRanker() {
                   ))}
                 </div>
               )}
+
+              {(() => {
+                const theirWants = selectedUserProfile.wantToTry[category];
+                return (
+                  <div className="mt-8">
+                    <div className={eyebrow}>Their want to try</div>
+                    <h3 className={`${heading} mt-1 mb-4`}>{cat.label} They Want to Try</h3>
+                    {theirWants.length === 0 ? (
+                      <p className="font-display italic text-ink-muted text-center py-6">Nothing saved yet</p>
+                    ) : (
+                      <div className="divide-y divide-line border-y border-line">
+                        {theirWants.map((item) => {
+                          const both = hasPlace(wantList, item);
+                          const ranked = rankedItems.findIndex(r => placeKey(r) === placeKey(item));
+                          return (
+                            <div key={placeKey(item)} className="py-3 px-2 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
+                                <div className="text-xs text-ink-muted">{item.address}</div>
+                                {both && <div className="text-xs text-wine mt-1">You both want to try this</div>}
+                                {ranked >= 0 && <div className="text-xs text-brass mt-1">You ranked it #{ranked + 1}. Tell them about it!</div>}
+                              </div>
+                              {!both && ranked < 0 && (
+                                <button onClick={() => addToWantToTry(item)} className={`${quietButton} shrink-0 px-3 py-2 flex items-center gap-1`}>
+                                  <BookmarkPlus className="w-3.5 h-3.5" />
+                                  Me too
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

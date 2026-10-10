@@ -1,5 +1,6 @@
 // Per-user data in Firestore: users/{uid} holds the username, who they follow,
-// and one saved top-10 list per category under rankings[categoryKey].
+// one saved top-10 list per category under rankings[categoryKey], and the spots they
+// want to try per category under wantToTry[categoryKey].
 // usernames/{lowercase name} records which account owns each username.
 import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
 
@@ -61,18 +62,21 @@ export async function createProfile(uid, username, legacyUserId = null) {
     usernameLower: username.toLowerCase(),
     hasAccount: true,
     rankings,
+    wantToTry: {},
     following: [],
     createdAt: now,
     updatedAt: now,
   }));
 }
 
-// Saves every category's list so it is there the next time the user signs in.
-export async function saveRankings(uid, rankings) {
+// Saves every category's ranking and want-to-try list so they are there the next time
+// the user signs in.
+export async function saveLists(uid, { rankings, wantToTry }) {
   const { db } = await getFirebase();
   const { doc, setDoc } = await loadFirestoreSdk();
   await setDoc(doc(db, 'users', uid), {
     rankings,
+    wantToTry,
     ranking: rankings.burgers || [], // legacy field read by older clients
     updatedAt: new Date().toISOString(),
   }, { merge: true });
