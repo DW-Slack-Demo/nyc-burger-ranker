@@ -1,0 +1,50 @@
+name: Deploy AI search helper
+
+# Publishes the ai-search/ Worker to Cloudflare, with the Anthropic key passed in as a
+# Cloudflare secret. Needs the CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and
+# ANTHROPIC_API_KEY repository secrets (see README > AI Finder).
+on:
+  push:
+    branches: [main]
+    paths: ['ai-search/**', '.github/workflows/deploy-ai-search.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ai-search/package-lock.json
+      - run: npm ci
+        working-directory: ai-search
+      - name: Check the secrets are set
+        id: secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ANTHROPIC_API_KEY; do
+            if [ -z "${!name}" ]; then echo "::warning::Add the $name repository secret (see README > AI Finder)."; missing=1; fi
+          done
+          echo "ready=$([ $missing = 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # A manual run should fail loudly; an automatic run before setup just skips.
+          if [ $missing = 1 ] && [ "${{ github.event_name }}" = workflow_dispatch ]; then exit 1; fi
+      - name: Publish the helper and store the Anthropic key in Cloudflare
+        if: steps.secrets.outputs.ready == 'true'
+        working-directory: ai-search
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx wrangler deploy
+          printf '%s' "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY

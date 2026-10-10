@@ -42,19 +42,24 @@ the AI Finder says it isn't switched on and the rest of the app works as before.
 1. Create an API key at https://console.anthropic.com (Settings > API keys). Set a
    monthly spend limit under Settings > Limits so a busy week can't run up a bill.
 2. Create a free Cloudflare account at https://dash.cloudflare.com/sign-up.
-3. Deploy the Worker (needs Node 20+):
-   ```
-   cd ai-search
-   npm install
-   npx wrangler login
-   npx wrangler secret put ANTHROPIC_API_KEY   # paste the key when asked
-   npx wrangler deploy
-   ```
-   The last command prints the Worker's address, like
-   `https://nyc-top10-ai-search.<your-subdomain>.workers.dev`.
-4. In GitHub, open Settings > Secrets and variables > Actions > **Variables**, add
+3. In Cloudflare, open **Workers & Pages** once so it sets up your free `workers.dev`
+   address. Then create an API token (My Profile > API Tokens > Create Token > **Edit
+   Cloudflare Workers** template), and copy your **Account ID** (shown on the Workers &
+   Pages overview).
+4. In GitHub, open Settings > Secrets and variables > Actions and add three repository
+   **secrets**: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ANTHROPIC_API_KEY`.
+5. Open Actions > **Deploy AI search helper** > Run workflow. It publishes `ai-search/`
+   and stores the Anthropic key as a Cloudflare secret. The helper's address appears in
+   the run's log and in Cloudflare under Workers & Pages, like
+   `https://nyc-top10-ai-search.<your-subdomain>.workers.dev`. The workflow also runs
+   by itself whenever `ai-search/` changes on main.
+6. Back in Settings > Secrets and variables > Actions, open the **Variables** tab, add
    `VITE_AI_SEARCH_URL` with that address, then re-run the **Deploy to GitHub Pages**
    workflow.
+
+To run the helper from your own computer instead (needs Node 20+): `cd ai-search && npm
+install && npx wrangler login && npx wrangler secret put ANTHROPIC_API_KEY && npx wrangler
+deploy`.
 
 The Worker only answers requests from the sites listed in `ALLOWED_ORIGINS` in
 `ai-search/wrangler.toml` (the live site and local dev).
