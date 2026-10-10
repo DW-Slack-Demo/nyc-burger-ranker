@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut } from 'lucide-react';
 
-import { getFirebase, loadFirestoreSdk, databaseErrorMessage } from './firebase.js';
-import { watchAuth, logOut } from './auth.js';
+import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
+import { watchAuth, logOut, addEmail } from './auth.js';
 import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
 import { fuzzySearch, normalize } from './fuzzySearch.js';
@@ -162,6 +162,10 @@ export default function NYCBurgerRanker() {
   
   // User profile & social features
   const [username, setUsername] = useState('');
+  // False for older username-only accounts, which are asked to add an email for password resets.
+  const [hasEmail, setHasEmail] = useState(true);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailStatus, setEmailStatus] = useState({ busy: false, error: '', sentTo: '' });
   const [initError, setInitError] = useState('');
   const [saveStatus, setSaveStatus] = useState(''); // '', 'saving', 'saved', 'error'
   // JSON of the lists as last loaded or saved; null until the signed-in user's lists have loaded.
@@ -199,6 +203,7 @@ export default function NYCBurgerRanker() {
         return;
       }
       setIsLoading(true);
+      setHasEmail(user.hasEmail);
       await loadData(user);
     })
       .then((unsub) => {
@@ -241,6 +246,9 @@ export default function NYCBurgerRanker() {
     lastSavedRankingsRef.current = null;
     setUserId(null);
     setUsername('');
+    setHasEmail(true);
+    setNewEmail('');
+    setEmailStatus({ busy: false, error: '', sentTo: '' });
     setRankings(normalizeRankings(null));
     setSubmitted({});
     setFollowing([]);
@@ -315,6 +323,17 @@ export default function NYCBurgerRanker() {
       await logOut();
     } catch (error) {
       console.error('Error logging out:', error);
+    }
+  };
+
+  const handleAddEmail = async (e) => {
+    e.preventDefault();
+    setEmailStatus({ busy: true, error: '', sentTo: '' });
+    try {
+      await addEmail(newEmail);
+      setEmailStatus({ busy: false, error: '', sentTo: newEmail.trim() });
+    } catch (error) {
+      setEmailStatus({ busy: false, error: error.message, sentTo: '' });
     }
   };
 
@@ -730,6 +749,38 @@ export default function NYCBurgerRanker() {
               Log out
             </button>
           </div>
+          {!hasEmail && !isDemoMode && (
+            <div className="mt-5 mx-auto max-w-lg p-4 bg-brass-light border border-brass/40 rounded-sm text-sm text-ink-soft text-left">
+              {emailStatus.sentTo ? (
+                <p role="status">
+                  We sent a confirmation link to <strong>{emailStatus.sentTo}</strong>. Click it to add the email
+                  to your account. After that, log in with your email instead of your username.
+                </p>
+              ) : (
+                <form onSubmit={handleAddEmail}>
+                  <label htmlFor="add-email" className="block mb-2">
+                    Add an email so you can reset your password if you ever forget it.
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="add-email"
+                      type="email"
+                      autoComplete="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className={`${input} py-2`}
+                      required
+                    />
+                    <button type="submit" disabled={emailStatus.busy} className={`${primaryButton} px-4 shrink-0`}>
+                      {emailStatus.busy ? 'Sending...' : 'Add email'}
+                    </button>
+                  </div>
+                  {emailStatus.error && <p className="mt-2 text-wine" role="alert">{emailStatus.error}</p>}
+                </form>
+              )}
+            </div>
+          )}
           {saveStatus && (
             <div className={`mt-1 text-xs ${saveStatus === 'error' ? 'text-wine' : 'text-ink-muted'}`}>
               {saveStatus === 'saving' && 'Saving your lists...'}
