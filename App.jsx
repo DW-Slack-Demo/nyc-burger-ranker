@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut, Bookmark, BookmarkPlus, Check } from 'lucide-react';
+import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut, Bookmark, BookmarkPlus, Check, Camera } from 'lucide-react';
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
 import { watchAuth, logOut, addEmail } from './auth.js';
 import { loadUser, createProfile, saveLists, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
 import PlacesMap from './PlacesMap.jsx';
+import PhotoViewer from './PhotoViewer.jsx';
+import { preparePhoto, addPhoto, deletePhoto, loadMyPhotos, loadCategoryPhotos, photoPlaceId } from './photoStore.js';
 import { fuzzySearch, normalize } from './fuzzySearch.js';
 
 // Recommended spots carry approximate map coordinates. Chains listed as "Multiple
@@ -203,6 +205,14 @@ export default function NYCBurgerRanker() {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
 
+  // Photos: your own, everyone's per category (loaded when the leaderboard opens), and
+  // which spot's photos are open full screen.
+  const [myPhotos, setMyPhotos] = useState([]);
+  const [categoryPhotos, setCategoryPhotos] = useState({});
+  const [photoViewer, setPhotoViewer] = useState(null); // { title, category, placeId, mineOnly, startIndex }
+  const [uploadingPhotoFor, setUploadingPhotoFor] = useState(null);
+  const [photoError, setPhotoError] = useState({ key: null, message: '' });
+
   const cat = CATEGORIES[category];
   const rankedItems = rankings[category];
   const setRankedItems = (items) => setRankings(prev => ({ ...prev, [category]: items }));
@@ -270,6 +280,16 @@ export default function NYCBurgerRanker() {
     return () => clearTimeout(timer);
   }, [rankings, wantToTry, userId]);
 
+  // Everyone's photos for the leaderboard, loaded the first time each category is shown.
+  useEffect(() => {
+    if (!userId || view !== 'leaderboard' || categoryPhotos[category]) return;
+    let cancelled = false;
+    loadCategoryPhotos(category)
+      .then((photos) => { if (!cancelled) setCategoryPhotos(prev => ({ ...prev, [category]: photos })); })
+      .catch((error) => console.error('Error loading photos:', error));
+    return () => { cancelled = true; };
+  }, [userId, view, category]);
+
   const resetUserState = () => {
     lastSavedRankingsRef.current = null;
     setUserId(null);
@@ -284,6 +304,10 @@ export default function NYCBurgerRanker() {
     setFollowers([]);
     setAllUsers([]);
     setSelectedUserProfile(null);
+    setMyPhotos([]);
+    setCategoryPhotos({});
+    setPhotoViewer(null);
+    setPhotoError({ key: null, message: '' });
     setSaveStatus('');
     setView('ranking');
     switchCategory('burgers');
@@ -314,6 +338,7 @@ export default function NYCBurgerRanker() {
         loadAllUsers(),
         loadFollowers(user.uid),
         updateLeaderboard(firestore),
+        loadMyPhotos(user.uid).then(setMyPhotos).catch((error) => console.error('Error loading photos:', error)),
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -693,8 +718,52 @@ export default function NYCBurgerRanker() {
     setSearchQuery('');
   };
 
-  const removeBurger = (index) => {
-    setRankedItems(rankedItems.filter((_, i) => i !== index));
+  // Shrinks the picked picture and saves it against this spot.
+  const handlePhotoPick = async (item, file) => {
+    const key = placeKey(item);
+    setUploadingPhotoFor(key);
+    setPhotoError({ key: null, message: '' });
+    try {
+      const prepared = await preparePhoto(file);
+      const photo = await addPhoto({ uid: userId, username, category, placeKey: key, placeName: item.name, prepared, myPhotos });
+      setMyPhotos(prev => [...prev, photo]);
+    } catch (error) {
+      console.error('Error adding photo:', error);
+      const message = error?.name === 'QuotaExceededError'
+        ? "This demo keeps photos in your browser, and it's full. Delete a photo to add another."
+        : error?.code ? databaseErrorMessage(error) : error?.message;
+      setPhotoError({ key, message: message || "Couldn't add the photo. Please try again." });
+    }
+    setUploadingPhotoFor(null);
+  };
+
+  const handleDeletePhoto = async (photoId) => {
+    try {
+      await deletePhoto(photoId);
+    } catch (error) {
+      throw new Error(databaseErrorMessage(error));
+    }
+    setMyPhotos(prev => prev.filter(p => p.id !== photoId));
+    setCategoryPhotos(prev => Object.fromEntries(
+      Object.entries(prev).map(([key, list]) => [key, list.filter(p => p.id !== photoId)]),
+    ));
+  };
+
+  // Your photos of a spot go with it, so none are left where you can't reach them.
+  const removeBurger = async (index) => {
+    const item = rankedItems[index];
+    const photos = myPhotos.filter(p => p.category === category && p.placeId === photoPlaceId(placeKey(item)));
+    if (photos.length > 0) {
+      const count = photos.length === 1 ? 'your photo' : `your ${photos.length} photos`;
+      if (!window.confirm(`Remove ${item.name} and ${count} of it?`)) return;
+      try {
+        for (const photo of photos) await handleDeletePhoto(photo.id);
+      } catch (error) {
+        setPhotoError({ key: placeKey(item), message: error.message });
+        return;
+      }
+    }
+    setRankings(prev => ({ ...prev, [category]: prev[category].filter(other => other !== item) }));
   };
 
   const updateBurger = (index, field, value) => {
@@ -977,6 +1046,18 @@ export default function NYCBurgerRanker() {
       )}
     </div>
   );
+
+  // Photos of one spot. Your own new uploads show on the leaderboard straight away, before
+  // everyone's photos are reloaded.
+  const photosOf = (list, placeId) => list.filter(p => p.placeId === placeId);
+  const myCategoryPhotos = myPhotos.filter(p => p.category === category);
+  const leaderboardPhotos = [
+    ...(categoryPhotos[category] || []),
+    ...myCategoryPhotos.filter(p => !(categoryPhotos[category] || []).some(other => other.id === p.id)),
+  ].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const viewerPhotos = photoViewer
+    ? photosOf(photoViewer.mineOnly ? myPhotos.filter(p => p.category === photoViewer.category) : leaderboardPhotos, photoViewer.placeId)
+    : [];
 
   const views = [
     { key: 'ranking', label: 'My Ranking' },
@@ -1328,6 +1409,45 @@ export default function NYCBurgerRanker() {
                             className="w-full px-3 py-2 bg-white/70 border border-line rounded-sm text-sm italic text-ink-soft placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-wine focus:border-wine"
                             rows="2"
                           />
+
+                          {(() => {
+                            const key = placeKey(burger);
+                            const placeId = photoPlaceId(key);
+                            const mine = photosOf(myCategoryPhotos, placeId);
+                            const uploading = uploadingPhotoFor === key;
+                            return (
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {mine.map((photo, photoIndex) => (
+                                    <button
+                                      key={photo.id}
+                                      onClick={() => setPhotoViewer({ title: burger.name, category, placeId, mineOnly: true, startIndex: photoIndex })}
+                                      aria-label={`Open your photo ${photoIndex + 1} of ${burger.name}`}
+                                      className="w-16 h-16 rounded-sm overflow-hidden border border-line hover:border-wine"
+                                    >
+                                      <img src={photo.thumb} alt="" draggable={false} className="w-full h-full object-cover" />
+                                    </button>
+                                  ))}
+                                  <label className={`${quietButton} px-3 py-2 flex items-center gap-1 ${uploading || uploadingPhotoFor ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+                                    <Camera className="w-3.5 h-3.5" />
+                                    {uploading ? 'Adding...' : 'Add photo'}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="sr-only"
+                                      disabled={!!uploadingPhotoFor}
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        e.target.value = '';
+                                        if (file) handlePhotoPick(burger, file);
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                                {photoError.key === key && <p className="mt-1 text-xs text-wine">{photoError.message}</p>}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <button onClick={() => removeBurger(index)} aria-label={`Remove ${burger.name}`} className="text-ink-muted hover:text-wine p-2">
@@ -1595,6 +1715,31 @@ export default function NYCBurgerRanker() {
                             ))}
                           </div>
                         )}
+                        {(() => {
+                          const placeId = photoPlaceId(placeKey(burger));
+                          const photos = photosOf(leaderboardPhotos, placeId);
+                          if (photos.length === 0) return null;
+                          const open = (startIndex) => setPhotoViewer({ title: burger.name, category, placeId, mineOnly: false, startIndex });
+                          return (
+                            <div className="flex items-center gap-1.5 mt-2">
+                              {photos.slice(0, 4).map((photo, photoIndex) => (
+                                <button
+                                  key={photo.id}
+                                  onClick={() => open(photoIndex)}
+                                  aria-label={`Open photo ${photoIndex + 1} of ${burger.name}`}
+                                  className="w-14 h-14 rounded-sm overflow-hidden border border-line hover:border-wine"
+                                >
+                                  <img src={photo.thumb} alt="" className="w-full h-full object-cover" />
+                                </button>
+                              ))}
+                              {photos.length > 4 && (
+                                <button onClick={() => open(4)} className="h-14 px-2 text-xs uppercase tracking-wider text-ink-muted hover:text-wine">
+                                  +{photos.length - 4} more
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="text-right flex-shrink-0">
@@ -1835,6 +1980,18 @@ export default function NYCBurgerRanker() {
           <p className="font-display italic text-ink-muted">Share your {cat.singular} rankings with friends</p>
         </footer>
       </div>
+
+      {photoViewer && (
+        <PhotoViewer
+          key={`${photoViewer.placeId}-${photoViewer.startIndex}`}
+          title={photoViewer.title}
+          photos={viewerPhotos}
+          startIndex={photoViewer.startIndex}
+          currentUserId={userId}
+          onDelete={handleDeletePhoto}
+          onClose={() => setPhotoViewer(null)}
+        />
+      )}
     </div>
   );
 }

@@ -62,3 +62,27 @@ export async function getDocs(ref) {
     .map(([path, data]) => snapshot(path.slice(prefix.length), data));
   return { docs, empty: docs.length === 0, size: docs.length, forEach: (fn) => docs.forEach(fn) };
 }
+
+export async function deleteDoc(ref) {
+  const db = readDb();
+  delete db.docs[ref.path];
+  writeDb(db);
+}
+
+// Applies queued writes together, like Firestore's batched writes.
+export function writeBatch() {
+  const steps = [];
+  return {
+    set(ref, data, options) { steps.push(() => setDoc(ref, data, options)); },
+    delete(ref) { steps.push(() => deleteDoc(ref)); },
+    async commit() {
+      const before = localStorage.getItem('nyc-top10-demo-db');
+      try {
+        for (const step of steps) await step();
+      } catch (error) {
+        if (before !== null) localStorage.setItem('nyc-top10-demo-db', before);
+        throw error;
+      }
+    },
+  };
+}
