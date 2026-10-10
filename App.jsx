@@ -675,6 +675,14 @@ export default function NYCBurgerRanker() {
     setView(key);
     // Pick up spots people you follow added since you signed in.
     if (key === 'wantToTry' || key === 'map' || key === 'following') loadAllUsers();
+    // And anyone who followed you since then.
+    if (key === 'following' && userId) loadFollowers(userId);
+  };
+
+  // The header counts open the Following page at the matching list.
+  const showPeople = (sectionId) => {
+    openView('following');
+    setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
 
   const addBurger = (place) => {
@@ -822,6 +830,8 @@ export default function NYCBurgerRanker() {
     : allUsers.filter(u => u.userId !== userId);
 
   const followingUsers = allUsers.filter(u => following.includes(u.userId));
+  // Followers with their ranking counts when we have them.
+  const followerUsers = followers.map(f => allUsers.find(u => u.userId === f.userId) || { ...f, rankingCount: 0 });
 
   // For each spot on your want-to-try list: who you follow also wants to try it, and who
   // has already ranked it (and where).
@@ -990,9 +1000,13 @@ export default function NYCBurgerRanker() {
           <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-ink-muted">
             <span className="font-semibold text-ink">@{username}</span>
             <span>·</span>
-            <span>{following.length} following</span>
+            <button onClick={() => showPeople('people-you-follow')} className="hover:text-wine underline-offset-2 hover:underline">
+              {following.length} following
+            </button>
             <span>·</span>
-            <span>{followers.length} followers</span>
+            <button onClick={() => showPeople('your-followers')} className="hover:text-wine underline-offset-2 hover:underline">
+              {followers.length} {followers.length === 1 ? 'follower' : 'followers'}
+            </button>
             <span>·</span>
             <button onClick={handleLogOut} className="hover:text-wine flex items-center gap-1">
               <LogOut className="w-3.5 h-3.5" />
@@ -1622,8 +1636,9 @@ export default function NYCBurgerRanker() {
               </div>
             </div>
 
+            <div className="grid gap-6 lg:gap-8">
             {/* Following List */}
-            <div className={panel}>
+            <div id="people-you-follow" className={`${panel} scroll-mt-4`}>
               <h3 className={`${heading} mb-4`}>People You Follow ({following.length})</h3>
               {followingUsers.length === 0 ? (
                 <div className="text-center py-12 border border-dashed border-line rounded-sm text-ink-muted">
@@ -1651,6 +1666,40 @@ export default function NYCBurgerRanker() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Followers List */}
+            <div id="your-followers" className={`${panel} scroll-mt-4`}>
+              <h3 className={`${heading} mb-4`}>Your Followers ({followers.length})</h3>
+              {followerUsers.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-line rounded-sm text-ink-muted">
+                  <Users className="w-8 h-8 mx-auto mb-3 text-line" />
+                  <p className="font-display italic text-lg text-ink-soft">No followers yet</p>
+                  <p className="text-sm mt-1">When someone follows you, they'll show up here.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-line border-y border-line">
+                  {followerUsers.map((user) => (
+                    <div key={user.userId} className="flex items-center justify-between gap-2 py-3 px-2 hover:bg-paper/60">
+                      <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
+                        <div className="font-semibold text-ink">@{user.username}</div>
+                        <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                      </div>
+                      {following.includes(user.userId) ? (
+                        <button onClick={() => viewUserProfile(user.userId)} className={`${quietButton} px-4 py-2`}>
+                          View Profile
+                        </button>
+                      ) : (
+                        <button onClick={() => followUser(user.userId)} className={`${primaryButton} px-4 py-2 flex items-center gap-1`}>
+                          <UserPlus className="w-3.5 h-3.5" />
+                          Follow back
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             </div>
           </div>
         )}

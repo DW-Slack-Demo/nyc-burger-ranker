@@ -104,11 +104,14 @@ export async function loadAllUsers() {
   return snapshot.docs.map((d) => ({ userId: d.id, ...d.data() }));
 }
 
+// Everyone who follows uid, with their id so their profile can be opened.
 export async function loadFollowers(uid) {
   const { db } = await getFirebase();
   const { collection, query, where, getDocs } = await loadFirestoreSdk();
   const snapshot = await getDocs(query(collection(db, 'users'), where('following', 'array-contains', uid)));
-  return snapshot.docs.map((d) => d.data().username).filter(Boolean);
+  return snapshot.docs
+    .map((d) => ({ userId: d.id, username: d.data().username }))
+    .filter((u) => u.username);
 }
 
 export async function setFollowing(uid, targetUid, follow) {
