@@ -5,7 +5,7 @@ import { getFirebase, loadFirestoreSdk, databaseErrorMessage } from './firebase.
 import { watchAuth, logOut } from './auth.js';
 import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
-import { fuzzySearch } from './fuzzySearch.js';
+import { fuzzySearch, normalize } from './fuzzySearch.js';
 
 const CATEGORIES = {
   burgers: {
@@ -86,10 +86,41 @@ const CATEGORY_KEYS = Object.keys(CATEGORIES);
 // since a key in this static site would be visible to anyone.
 const AI_SEARCH_URL = import.meta.env.VITE_AI_SEARCH_URL;
 
+// The search bar looks spots up on Google Maps through the same server, so every spot is
+// an official listing with a real address and one id, however people spell the name.
+const PLACES_URL = AI_SEARCH_URL && `${AI_SEARCH_URL.replace(/\/+$/, '')}/places`;
+
 // Reuse a recommended spot's id when the AI suggests it, so leaderboard votes add up.
 const placeIdFor = (name, key) => {
   const known = CATEGORIES[key]?.recommended.find(r => r.name.toLowerCase() === name.toLowerCase());
   return known ? known.place_id : `ai-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+};
+
+// Spots saved before search used Google Maps were typed in by hand (custom-…) or named by
+// the AI (ai-…), so two people can have the same place under different ids.
+const isUnverified = (item) => /^(custom|ai)-/.test(item.place_id || '');
+
+const ALL_RECOMMENDED = CATEGORY_KEYS.flatMap(key => CATEGORIES[key].recommended);
+const streetNumber = (address) => (address || '').match(/^\d[\d-]*/)?.[0];
+
+// A Google listing for one of the recommended spots keeps the recommended spot's id, so
+// people who added it from the list and people who searched for it are counted together.
+// Chains listed as "Multiple Locations" match any branch.
+const toListing = (place) => {
+  const name = normalize(place.name);
+  const known = ALL_RECOMMENDED.find((r) => {
+    const rec = normalize(r.name);
+    const sameName = name === rec || name.startsWith(`${rec} `) || rec.startsWith(`${name} `);
+    if (!sameName) return false;
+    return r.address === 'Multiple Locations' || streetNumber(r.address) === streetNumber(place.address);
+  });
+  if (known) return { place_id: known.place_id, name: known.name, address: known.address, tags: known.tags };
+  return {
+    place_id: place.id,
+    name: place.name,
+    address: place.address,
+    ...(place.location && { location: place.location }),
+  };
 };
 
 // Users saved before categories existed only have a top-level `ranking` (burgers).
@@ -106,6 +137,9 @@ export default function NYCBurgerRanker() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
+  // The place_id of a hand-typed spot being swapped for its official listing.
+  const [replacingId, setReplacingId] = useState(null);
   const [category, setCategory] = useState('burgers');
   const [rankings, setRankings] = useState(() => normalizeRankings(null));
   const [leaderboards, setLeaderboards] = useState(() => normalizeRankings(null));
@@ -147,6 +181,8 @@ export default function NYCBurgerRanker() {
     setCategory(key);
     setSearchResults([]);
     setSearchQuery('');
+    setSearchMessage('');
+    setReplacingId(null);
     setSelectedTags([]);
     setDraggedIndex(null);
     setDragSource(null);
@@ -336,7 +372,8 @@ export default function NYCBurgerRanker() {
         const burgerScores = scoresByCategory[submission.category || 'burgers'];
         if (!burgerScores) return;
         (submission.items || submission.burgers)?.forEach((burger, index) => {
-          const placeId = burger.place_id || burger.name;
+          // Hand-typed spots have a one-off id each, so count them by name instead.
+          const placeId = burger.place_id && !isUnverified(burger) ? burger.place_id : `name:${normalize(burger.name)}`;
           if (!burgerScores[placeId]) {
             burgerScores[placeId] = {
               name: burger.name,
@@ -406,7 +443,11 @@ export default function NYCBurgerRanker() {
       const data = await response.json().catch(() => ({}));
       if (searchId !== aiSearchIdRef.current) return;
       if (!response.ok) throw new Error(data.error || `AI search failed (${response.status})`);
-      const results = (data.results || []).map(r => ({
+      // With Google Maps switched on, the server attaches each spot's official listing.
+      const results = (data.results || []).map(r => (r.placeId ? {
+        ...r,
+        ...toListing({ id: r.placeId, name: r.name, address: r.address, location: r.location }),
+      } : {
         ...r,
         place_id: placeIdFor(r.name, r.category),
         address: r.address || r.neighborhood || 'New York, NY',
@@ -421,16 +462,72 @@ export default function NYCBurgerRanker() {
     setIsAiSearching(false);
   };
 
-  const searchBurgers = async () => {
-    if (!searchQuery.trim()) return;
+  // Only official listings can be added, never the typed text, so "4 Charles" and
+  // "4 Charles Prime" both end up as the same place.
+  const searchBurgers = async (query = searchQuery) => {
+    const q = query.trim();
+    if (!q) return;
     setIsSearching(true);
-    
-    const matches = fuzzySearch(cat.recommended, searchQuery);
-    
-    setSearchResults(matches.length > 0 ? matches : [
-      { name: searchQuery.trim(), address: "New York, NY", place_id: `custom-${Date.now()}` }
-    ]);
+    setSearchResults([]);
+    setSearchMessage('');
+
+    let results = [];
+    if (PLACES_URL) {
+      try {
+        const response = await fetch(PLACES_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Search failed (${response.status})`);
+        const seen = new Set();
+        results = (data.places || []).map(toListing).filter((p) => !seen.has(p.place_id) && seen.add(p.place_id));
+        if (results.length === 0) setSearchMessage(`No restaurants or bars in NYC match "${q}". Try the name as it appears on Google Maps.`);
+      } catch (error) {
+        console.error('Place search error:', error);
+        results = fuzzySearch(cat.recommended, q);
+        setSearchMessage(`${error.message} ${results.length ? 'Showing matching recommended spots instead.' : 'Try again, or pick from the recommended spots below.'}`);
+      }
+    } else {
+      results = fuzzySearch(cat.recommended, q);
+      setSearchMessage(`Google Maps search isn't switched on for this site yet, so only the recommended spots can be searched.${results.length ? '' : ` None of them match "${q}".`}`);
+    }
+
+    setSearchResults(results);
     setIsSearching(false);
+  };
+
+  // Searches for a hand-typed spot so it can be swapped for its official listing.
+  const startMatching = (item) => {
+    setReplacingId(item.place_id);
+    setSearchQuery(item.name);
+    searchBurgers(item.name);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelMatching = () => {
+    setReplacingId(null);
+    setSearchResults([]);
+    setSearchMessage('');
+    setSearchQuery('');
+  };
+
+  // Swaps the hand-typed spot for the chosen listing, keeping its rank, stars and notes.
+  const replaceWithListing = (place) => {
+    if (rankedItems.some(b => b.place_id === place.place_id)) {
+      alert(`${place.name} is already in your ranking. Remove the old entry with the bin button instead.`);
+      return;
+    }
+    setRankedItems(rankedItems.map(b => (b.place_id === replacingId ? {
+      ...b,
+      place_id: place.place_id,
+      name: place.name,
+      address: place.address,
+      tags: b.tags?.length ? b.tags : place.tags || [],
+      ...(place.location && { location: place.location }),
+    } : b)));
+    cancelMatching();
   };
 
   // Adds a spot to one of the lists (the open one unless another is named).
@@ -453,6 +550,7 @@ export default function NYCBurgerRanker() {
       rating: 5,
       comments: '',
       tags: place.tags || [],
+      ...(place.location && { location: place.location }),
     }] }));
     return true;
   };
@@ -460,6 +558,7 @@ export default function NYCBurgerRanker() {
   const addBurger = (place) => {
     if (!addToList(place)) return;
     setSearchResults([]);
+    setSearchMessage('');
     setSearchQuery('');
   };
 
@@ -677,6 +776,12 @@ export default function NYCBurgerRanker() {
             {/* Search */}
             <div className={panel}>
               <div className={`${eyebrow} mb-3`}>Find a spot</div>
+              {replacingId && (
+                <div className="mb-3 text-sm text-ink-soft bg-wine-light border border-wine/20 rounded-sm px-3 py-2 flex items-center justify-between gap-3">
+                  <span>Pick the official listing to replace the one you typed.</span>
+                  <button onClick={cancelMatching} className="text-xs uppercase tracking-wider text-wine hover:text-wine-dark">Cancel</button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-3.5 text-ink-muted w-4 h-4" />
@@ -685,12 +790,13 @@ export default function NYCBurgerRanker() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
+                    maxLength={300}
                     placeholder={cat.searchPlaceholder}
                     className={`${input} pl-9`}
                   />
                 </div>
                 <button
-                  onClick={searchBurgers}
+                  onClick={() => searchBurgers()}
                   disabled={isSearching}
                   className={`${primaryButton} px-5`}
                 >
@@ -698,10 +804,12 @@ export default function NYCBurgerRanker() {
                 </button>
               </div>
 
+              {searchMessage && <p className="mt-3 text-sm italic text-ink-muted">{searchMessage}</p>}
+
               {searchResults.length > 0 && (
                 <div className="mt-4 divide-y divide-line border-y border-line">
-                  {searchResults.map((place, idx) => (
-                    <div key={idx} className="flex items-center justify-between py-3">
+                  {searchResults.map((place) => (
+                    <div key={place.place_id} className="flex items-center justify-between gap-3 py-3">
                       <div className="flex-1">
                         <div className="font-display text-lg text-ink">{place.name}</div>
                         <div className="text-sm text-ink-muted flex items-center gap-1">
@@ -710,11 +818,10 @@ export default function NYCBurgerRanker() {
                         </div>
                       </div>
                       <button
-                        onClick={() => addBurger(place)}
-                        className={`${primaryButton} px-4 py-2 flex items-center gap-1`}
+                        onClick={() => (replacingId ? replaceWithListing(place) : addBurger(place))}
+                        className={`${primaryButton} shrink-0 px-4 py-2 flex items-center gap-1`}
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add
+                        {replacingId ? 'Use this' : <><Plus className="w-3.5 h-3.5" />Add</>}
                       </button>
                     </div>
                   ))}
@@ -889,22 +996,19 @@ export default function NYCBurgerRanker() {
 
                         <div className="flex-1 min-w-0 space-y-3">
                           <div>
-                            <input
-                              type="text"
-                              value={burger.name}
-                              onChange={(e) => updateBurger(index, 'name', e.target.value)}
-                              className="font-display text-xl text-ink w-full border-b border-transparent hover:border-line focus:border-wine focus:outline-none bg-transparent px-1"
-                            />
-                            <div className="flex items-start gap-1 mt-1">
-                              <MapPin className="w-3 h-3 mt-1 text-ink-muted" />
-                              <input
-                                type="text"
-                                value={burger.address}
-                                onChange={(e) => updateBurger(index, 'address', e.target.value)}
-                                className="text-sm text-ink-muted flex-1 border-b border-transparent hover:border-line focus:border-wine focus:outline-none bg-transparent px-1"
-                                placeholder="Add address..."
-                              />
+                            <div className="font-display text-xl text-ink">{burger.name}</div>
+                            <div className="text-sm text-ink-muted flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3" />
+                              {burger.address}
                             </div>
+                            {isUnverified(burger) && PLACES_URL && (
+                              <button
+                                onClick={() => startMatching(burger)}
+                                className="mt-1 text-xs text-wine hover:text-wine-dark underline underline-offset-2"
+                              >
+                                Typed in by hand. Match it to the official listing
+                              </button>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
