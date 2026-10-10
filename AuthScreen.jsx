@@ -61,7 +61,7 @@ export default function AuthScreen() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="bg-card border border-line rounded-sm p-8 sm:p-10 max-w-md w-full">
         <div className="text-center mb-6">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-brass font-semibold">New York City</div>
+          <div className="text-[11px] uppercase tracking-[0.2em] text-brass font-semibold">New York City · Miami</div>
           <h1 className="font-display italic text-5xl text-wine mt-1 mb-3">Top Shelf</h1>
           <p className="font-display italic text-ink-soft">
             {SUBTITLES[mode]}

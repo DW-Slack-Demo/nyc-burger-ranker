@@ -1,6 +1,8 @@
 // Per-user data in Firestore: users/{uid} holds the username, who they follow,
 // one saved top-10 list per category under rankings[categoryKey], and the spots they
-// want to try per category under wantToTry[categoryKey].
+// want to try per category under wantToTry[categoryKey]. Those are the NYC lists; other
+// cities' lists sit under cities[cityKey].rankings and cities[cityKey].wantToTry, and
+// homeCity is the city the app opens to.
 // usernames/{lowercase name} records which account owns each username.
 import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
 
@@ -69,29 +71,41 @@ export async function createProfile(uid, username, legacyUserId = null) {
   }));
 }
 
-// Saves every category's ranking and want-to-try list so they are there the next time
-// the user signs in.
-export async function saveLists(uid, { rankings, wantToTry }) {
+// Saves every city's rankings and want-to-try lists so they are there the next time the
+// user signs in. lists is { nyc: { rankings, wantToTry }, miami: { ... } }.
+export async function saveLists(uid, lists) {
   const { db } = await getFirebase();
   const { doc, setDoc } = await loadFirestoreSdk();
+  const { nyc, ...otherCities } = lists;
   await setDoc(doc(db, 'users', uid), {
-    rankings,
-    wantToTry,
-    ranking: rankings.burgers || [], // legacy field read by older clients
+    rankings: nyc.rankings,
+    wantToTry: nyc.wantToTry,
+    cities: otherCities,
+    ranking: nyc.rankings.burgers || [], // legacy field read by older clients
     updatedAt: new Date().toISOString(),
   }, { merge: true });
 }
 
-// One leaderboard entry per user per category, replaced each time they resubmit.
-export async function submitRanking(uid, username, category, items) {
+// Which city the app opens to for this user.
+export async function saveHomeCity(uid, city) {
   const { db } = await getFirebase();
   const { doc, setDoc } = await loadFirestoreSdk();
-  await setDoc(doc(db, 'submissions', `${uid}_${category}`), {
+  await setDoc(doc(db, 'users', uid), { homeCity: city }, { merge: true });
+}
+
+// One leaderboard entry per user per city per category, replaced each time they
+// resubmit. NYC entries keep the ids they had before there were other cities.
+export async function submitRanking(uid, username, city, category, items) {
+  const { db } = await getFirebase();
+  const { doc, setDoc } = await loadFirestoreSdk();
+  const id = city === 'nyc' ? `${uid}_${category}` : `${uid}_${city}_${category}`;
+  await setDoc(doc(db, 'submissions', id), {
     userId: uid,
     username,
+    city,
     category,
     items,
-    ...(category === 'burgers' && { burgers: items }), // legacy field
+    ...(city === 'nyc' && category === 'burgers' && { burgers: items }), // legacy field
     timestamp: new Date().toISOString(),
   });
 }
