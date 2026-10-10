@@ -53,9 +53,11 @@ export default function PlacesMap({ pins }) {
 
   useEffect(() => {
     const map = L.map(containerRef.current, { center: NYC_CENTER, zoom: 12, scrollWheelZoom: false });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
+    // OpenStreetMap's free tiles need no key; they are toned down in index.html (.ts-map-tiles)
+    // to suit the bistro palette.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      className: 'ts-map-tiles',
       maxZoom: 19,
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
@@ -67,7 +69,13 @@ export default function PlacesMap({ pins }) {
       youAreHere = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#3B82F6', fillOpacity: 1 }).addTo(map);
     });
 
+    // The map measures its box once when created; if the page layout settles afterwards
+    // (styles loading, phone rotating) it needs to measure again or tiles stop short.
+    const resize = new ResizeObserver(() => map.invalidateSize());
+    resize.observe(containerRef.current);
+
     return () => {
+      resize.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -98,7 +106,7 @@ export default function PlacesMap({ pins }) {
 
   return (
     <div className="relative">
-      <div ref={containerRef} className="h-[70vh] min-h-[420px] w-full rounded-sm border border-line z-0" aria-label="Map of spots" />
+      <div ref={containerRef} style={{ height: '70vh', minHeight: 420 }} className="w-full rounded-sm border border-line z-0" aria-label="Map of spots" />
       <button
         onClick={locate}
         className="absolute bottom-4 right-4 z-[500] bg-card border border-line rounded-sm px-3 py-2 text-xs uppercase tracking-wider font-semibold text-ink-soft hover:text-wine shadow-sm"
