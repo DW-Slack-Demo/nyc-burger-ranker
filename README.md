@@ -26,4 +26,4 @@ browser only, so other people and other devices won't see it.
    (Settings > Secrets and variables > Actions) for the GitHub Pages build, and in `.env`
    (copy `.env.example`) for local development.
 3. Deploy the security rules so people can only change their own lists:
-   `npx firebase-tools deploy --only firestore:rules --project burger-rating-app`
+   `npx firebase-tools deploy --only firestore:rules --project nyc-top-10`
