@@ -137,3 +137,53 @@ export async function setFollowing(uid, targetUid, follow) {
     following: follow ? arrayUnion(targetUid) : arrayRemove(targetUid),
   });
 }
+
+// Gives the account a new username in one step: the new name is reserved, the old one is
+// released for others, and the profile switches over, all together or not at all. The
+// account's leaderboard entries then pick up the new name.
+export async function renameUser(uid, oldName, newName) {
+  const { db } = await getFirebase();
+  const { doc, getDoc, setDoc, writeBatch, collection, query, where, getDocs } = await loadFirestoreSdk();
+  const oldLower = oldName.toLowerCase();
+  const newLower = newName.toLowerCase();
+
+  const batch = writeBatch(db);
+  if (newLower !== oldLower) {
+    batch.set(doc(db, 'usernames', newLower), { uid });
+    const oldRef = doc(db, 'usernames', oldLower);
+    const oldClaim = await withTimeout(getDoc(oldRef));
+    if (oldClaim.exists() && oldClaim.data().uid === uid) batch.delete(oldRef);
+  }
+  batch.set(doc(db, 'users', uid), {
+    username: newName,
+    usernameLower: newLower,
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+  await withTimeout(batch.commit());
+
+  const submissions = await getDocs(query(collection(db, 'submissions'), where('userId', '==', uid)));
+  await Promise.all(submissions.docs.map((d) => setDoc(doc(db, 'submissions', d.id), { username: newName }, { merge: true })
+    .catch((error) => console.warn('Could not rename a leaderboard entry:', error))));
+}
+
+// Removes everything the account has saved: profile, lists, leaderboard entries, photos,
+// username and profile photo. Done in one step, so nothing is left half deleted.
+export async function deleteUserData(uid, username) {
+  const { db } = await getFirebase();
+  const { doc, getDoc, writeBatch, collection, query, where, getDocs } = await loadFirestoreSdk();
+  const byUser = (name) => withTimeout(getDocs(query(collection(db, name), where('userId', '==', uid))));
+  const [photos, submissions] = await Promise.all([byUser('photos'), byUser('submissions')]);
+  const nameRef = doc(db, 'usernames', username.toLowerCase());
+  const claim = await withTimeout(getDoc(nameRef));
+
+  const batch = writeBatch(db);
+  photos.docs.forEach((d) => {
+    batch.delete(doc(db, 'photos', d.id));
+    batch.delete(doc(db, 'photoFiles', d.id));
+  });
+  submissions.docs.forEach((d) => batch.delete(doc(db, 'submissions', d.id)));
+  if (claim.exists() && claim.data().uid === uid) batch.delete(nameRef);
+  batch.delete(doc(db, 'avatars', uid));
+  batch.delete(doc(db, 'users', uid));
+  await withTimeout(batch.commit());
+}

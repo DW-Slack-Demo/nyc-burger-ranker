@@ -5,7 +5,7 @@
 // display. Older accounts were made with a username only: those map to a private
 // placeholder address that is never shown or emailed, until the person adds an email.
 import { getFirebase, loadAuthSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
-import { createProfile, claimUsername, isUsernameTaken } from './userStore.js';
+import { createProfile, claimUsername, isUsernameTaken, renameUser, deleteUserData } from './userStore.js';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -59,7 +59,7 @@ function friendlyAuthError(error) {
   }
 }
 
-// Calls back with { uid, username, hasEmail } when signed in, or null when signed out.
+// Calls back with { uid, username, hasEmail, email } when signed in, or null when signed out.
 // hasEmail is false for older username-only accounts, which can't get reset emails yet.
 // Firebase keeps the session in the browser, so people stay signed in between visits.
 export async function watchAuth(callback) {
@@ -75,6 +75,7 @@ export async function watchAuth(callback) {
       uid: user.uid,
       username: user.displayName || (isPlaceholderEmail(user.email) ? user.email?.split('@')[0] : '') || '',
       hasEmail: !isPlaceholderEmail(user.email),
+      email: isPlaceholderEmail(user.email) ? '' : user.email,
     } : null);
   });
 }
@@ -201,4 +202,86 @@ export async function logOut() {
   const { auth } = await getFirebase();
   const { signOut } = await loadAuthSdk();
   await signOut(auth);
+}
+
+// Changing the email or password, or deleting the account, asks for the current password
+// first, so someone who picks up a signed-in phone can't take the account over.
+async function confirmPassword(password) {
+  const { auth } = await getFirebase();
+  const { EmailAuthProvider, reauthenticateWithCredential } = await loadAuthSdk();
+  const user = auth.currentUser;
+  try {
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  } catch (error) {
+    const message = friendlyAuthError(error);
+    throw new Error(message.startsWith('Wrong') ? "That isn't your current password." : message);
+  }
+  return user;
+}
+
+// Switches the account to a new username and frees the old one. Older username-only
+// accounts log in with their username, so they add an email before they can change it.
+export async function changeUsername(currentName, newName) {
+  const name = newName.trim();
+  if (!USERNAME_PATTERN.test(name)) throw new Error('Usernames are 3 to 20 letters, numbers or underscores.');
+  if (name === currentName) throw new Error("That's already your username.");
+  const { auth } = await getFirebase();
+  const { updateProfile } = await loadAuthSdk();
+  const user = auth.currentUser;
+  if (isPlaceholderEmail(user.email)) {
+    throw new Error('You log in with your username, so add an email to your account (at the top of the page) before changing it.');
+  }
+  try {
+    if (name.toLowerCase() !== currentName.toLowerCase() && await isUsernameTaken(name, user.uid)) {
+      throw new Error(USERNAME_TAKEN);
+    }
+    await renameUser(user.uid, currentName, name);
+  } catch (error) {
+    throw new Error(error.message === USERNAME_TAKEN ? USERNAME_TAKEN : databaseErrorMessage(error));
+  }
+  await updateProfile(user, { displayName: name }).catch((error) => console.warn('Could not update the login name:', error));
+  return name;
+}
+
+// Firebase emails a confirmation link to the new address; the login email changes once
+// it is clicked, so a typo can't lock anyone out.
+export async function changeEmail(newEmail, password) {
+  if (isDemoMode) throw new Error("Emails can't be changed in demo mode.");
+  const entered = newEmail.trim();
+  if (!EMAIL_PATTERN.test(entered)) throw new Error('Please enter a valid email address.');
+  const user = await confirmPassword(password);
+  if (entered.toLowerCase() === user.email?.toLowerCase()) throw new Error("That's already your email.");
+  const { verifyBeforeUpdateEmail } = await loadAuthSdk();
+  try {
+    await verifyBeforeUpdateEmail(user, entered);
+  } catch (error) {
+    throw new Error(friendlyAuthError(error));
+  }
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  if (newPassword.length < MIN_PASSWORD_LENGTH) throw new Error(`Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`);
+  const user = await confirmPassword(currentPassword);
+  const { updatePassword } = await loadAuthSdk();
+  try {
+    await updatePassword(user, newPassword);
+  } catch (error) {
+    throw new Error(friendlyAuthError(error));
+  }
+}
+
+// Deletes everything the account saved, then the login itself, which signs it out.
+export async function deleteAccount(username, password) {
+  const user = await confirmPassword(password);
+  try {
+    await deleteUserData(user.uid, username);
+  } catch (error) {
+    throw new Error(databaseErrorMessage(error));
+  }
+  const { deleteUser } = await loadAuthSdk();
+  try {
+    await deleteUser(user);
+  } catch (error) {
+    throw new Error(friendlyAuthError(error));
+  }
 }
