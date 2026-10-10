@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, GripVertical, Star, Trophy, MapPin, MessageSquare, Trash2, Plus, Sparkles, Tag, Filter, X, User, UserPlus, Users, Settings, LogOut } from 'lucide-react';
 
-import { getFirebase, loadFirestoreSdk } from './firebase.js';
+import { getFirebase, loadFirestoreSdk, databaseErrorMessage } from './firebase.js';
 import { watchAuth, logOut } from './auth.js';
 import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
+import { fuzzySearch } from './fuzzySearch.js';
 
 const CATEGORIES = {
   burgers: {
@@ -239,7 +240,7 @@ export default function NYCBurgerRanker() {
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
-      setUserId(user.uid);
+      setInitError(databaseErrorMessage(error));
     }
     setIsLoading(false);
   };
@@ -411,15 +412,10 @@ export default function NYCBurgerRanker() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     
-    const allBurgers = [...cat.recommended];
-    const lowerQuery = searchQuery.toLowerCase();
-    const filtered = allBurgers.filter(b => 
-      b.name.toLowerCase().includes(lowerQuery) || 
-      b.address.toLowerCase().includes(lowerQuery)
-    );
+    const matches = fuzzySearch(cat.recommended, searchQuery);
     
-    setSearchResults(filtered.length > 0 ? filtered.slice(0, 5) : [
-      { name: searchQuery, address: "New York, NY", place_id: `custom-${Date.now()}` }
+    setSearchResults(matches.length > 0 ? matches : [
+      { name: searchQuery.trim(), address: "New York, NY", place_id: `custom-${Date.now()}` }
     ]);
     setIsSearching(false);
   };
@@ -547,8 +543,21 @@ export default function NYCBurgerRanker() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">🍔</div>
           <p className="text-gray-700">{initError}</p>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-orange-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-600"
+            >
+              Try again
+            </button>
+            <button
+              onClick={async () => { await logOut().catch(() => {}); setInitError(''); }}
+              className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-300"
+            >
+              Log out
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -577,7 +586,7 @@ export default function NYCBurgerRanker() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-4">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-6 pt-8">
-          <h1 className="text-5xl font-bold text-gray-800 mb-2">🍔🍸🍕 NYC Top 10</h1>
+          <h1 className="text-5xl font-bold text-gray-800 mb-2">🍔🍸🍕 Top Shelf</h1>
           <p className="text-gray-600">Rank your top 10 burgers, martinis and pizza in New York City</p>
           <div className="mt-2 flex items-center justify-center gap-2 text-sm">
             <User className="w-4 h-4 text-orange-600" />
