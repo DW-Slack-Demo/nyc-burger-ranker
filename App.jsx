@@ -5,6 +5,7 @@ import { getFirebase, loadFirestoreSdk, databaseErrorMessage } from './firebase.
 import { watchAuth, logOut } from './auth.js';
 import { loadUser, createProfile, saveRankings, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
+import { fuzzySearch } from './fuzzySearch.js';
 
 const CATEGORIES = {
   burgers: {
@@ -397,15 +398,10 @@ export default function NYCBurgerRanker() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     
-    const allBurgers = [...cat.recommended];
-    const lowerQuery = searchQuery.toLowerCase();
-    const filtered = allBurgers.filter(b => 
-      b.name.toLowerCase().includes(lowerQuery) || 
-      b.address.toLowerCase().includes(lowerQuery)
-    );
+    const matches = fuzzySearch(cat.recommended, searchQuery);
     
-    setSearchResults(filtered.length > 0 ? filtered.slice(0, 5) : [
-      { name: searchQuery, address: "New York, NY", place_id: `custom-${Date.now()}` }
+    setSearchResults(matches.length > 0 ? matches : [
+      { name: searchQuery.trim(), address: "New York, NY", place_id: `custom-${Date.now()}` }
     ]);
     setIsSearching(false);
   };
