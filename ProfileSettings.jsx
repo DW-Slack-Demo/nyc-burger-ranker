@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { LogOut, Check } from 'lucide-react';
+import { LogOut, Check, Camera } from 'lucide-react';
 import { changeUsername, changeEmail, changePassword, deleteAccount, MIN_PASSWORD_LENGTH } from './auth.js';
 import { isDemoMode } from './firebase.js';
+import { saveAvatar, removeAvatar } from './photoStore.js';
+import Avatar from './Avatar.jsx';
 
 // Runs a form's action, tracking whether it is busy, its error and what to say when done.
 function useAction() {
@@ -26,20 +28,33 @@ function Status({ state }) {
   return null;
 }
 
-// Your own account: username, default city, email, password, signing out and deleting it.
-export default function ProfileSettings({ username, email, hasEmail, homeCity, cities, onHomeCityChange, onRenamed, onLogOut, ui }) {
-  const { panel, heading, eyebrow, input, primaryButton, quietButton } = ui;
-  const label = 'block text-xs uppercase tracking-wider font-semibold text-ink-soft mb-1';
+// Your own account: profile photo, username, default city, email, password, signing out and
+// deleting it.
+export default function ProfileSettings({ userId, avatar, onAvatarChange, username, email, hasEmail, homeCity, cities, onHomeCityChange, onRenamed, onLogOut, ui }) {
+  const { panel, eyebrow, input, primaryButton, quietButton } = ui;
 
+  const [avatarState, runAvatar] = useAction();
   const [newName, setNewName] = useState('');
   const [nameState, runName] = useAction();
   const [emailForm, setEmailForm] = useState({ email: '', password: '' });
   const [emailState, runEmail] = useAction();
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '' });
   const [passwordState, runPassword] = useAction();
-  const [showDelete, setShowDelete] = useState(false);
+  // Which setting's form is open; only one at a time keeps the page short.
+  const [open, setOpen] = useState(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteState, runDelete] = useAction();
+
+  const pickAvatar = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) runAvatar(async () => onAvatarChange(await saveAvatar(userId, file)));
+  };
+
+  const clearAvatar = () => runAvatar(async () => {
+    await removeAvatar(userId);
+    onAvatarChange(null);
+  });
 
   const submitName = async (e) => {
     e.preventDefault();
@@ -48,7 +63,7 @@ export default function ProfileSettings({ username, email, hasEmail, homeCity, c
       onRenamed(name);
       return `You're now @${name}.`;
     });
-    if (ok) setNewName('');
+    if (ok) { setNewName(''); setOpen(null); }
   };
 
   const submitEmail = async (e) => {
@@ -58,7 +73,7 @@ export default function ProfileSettings({ username, email, hasEmail, homeCity, c
       await changeEmail(sentTo, emailForm.password);
       return `We sent a confirmation link to ${sentTo}. Your email changes once you click it; until then, keep logging in with ${email}.`;
     });
-    if (ok) setEmailForm({ email: '', password: '' });
+    if (ok) { setEmailForm({ email: '', password: '' }); setOpen(null); }
   };
 
   const submitPassword = async (e) => {
@@ -67,7 +82,7 @@ export default function ProfileSettings({ username, email, hasEmail, homeCity, c
       await changePassword(passwordForm.current, passwordForm.next);
       return 'Your password is changed. Use the new one next time you log in.';
     });
-    if (ok) setPasswordForm({ current: '', next: '' });
+    if (ok) { setPasswordForm({ current: '', next: '' }); setOpen(null); }
   };
 
   const submitDelete = async (e) => {
@@ -76,171 +91,210 @@ export default function ProfileSettings({ username, email, hasEmail, homeCity, c
     await runDelete(() => deleteAccount(username, deletePassword));
   };
 
+  const toggle = (key) => {
+    setOpen(open === key ? null : key);
+    if (key === 'delete') setDeletePassword('');
+  };
+  const changeLink = (key, text = 'Change') => (
+    <button type="button" onClick={() => toggle(key)} className="text-sm text-wine hover:text-wine-dark underline underline-offset-2 shrink-0">
+      {open === key ? 'Cancel' : text}
+    </button>
+  );
+  const row = 'py-3 flex items-center justify-between gap-3';
+  const rowLabel = 'w-24 shrink-0 text-xs uppercase tracking-wider font-semibold text-ink-soft';
+  const rowValue = 'flex-1 min-w-0 truncate text-sm text-ink';
+  const inlineForm = 'pb-4 -mt-1 space-y-2 max-w-md';
+
   return (
     <div className={panel}>
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
+      <div className="flex items-center gap-4">
+        <Avatar src={avatar} username={username} size={56} />
+        <div className="flex-1 min-w-0">
           <div className={eyebrow}>Account settings</div>
-          <h2 className="font-display text-3xl text-ink mt-1">@{username}</h2>
-          {email && <p className="text-sm text-ink-muted">{email}</p>}
+          <h2 className="font-display text-2xl text-ink truncate">@{username}</h2>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className={`text-wine hover:text-wine-dark flex items-center gap-1 ${avatarState.busy ? 'opacity-50' : 'cursor-pointer'}`}>
+              <Camera className="w-4 h-4" />
+              {avatarState.busy ? 'Saving...' : avatar ? 'Change photo' : 'Add a photo'}
+              <input type="file" accept="image/*" className="hidden" disabled={avatarState.busy} onChange={pickAvatar} />
+            </label>
+            {avatar && !avatarState.busy && (
+              <button type="button" onClick={clearAvatar} className="text-ink-muted hover:text-wine underline underline-offset-2">
+                Remove
+              </button>
+            )}
+          </div>
         </div>
-        <button onClick={onLogOut} className={`${quietButton} px-4 py-2 flex items-center gap-1.5`}>
+        <button onClick={onLogOut} className={`${quietButton} px-3 py-2 flex items-center gap-1.5 shrink-0 self-start`}>
           <LogOut className="w-3.5 h-3.5" />
           Log out
         </button>
       </div>
+      <Status state={avatarState} />
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <form onSubmit={submitName}>
-          <h3 className={`${heading} mb-1`}>Username</h3>
-          <p className="text-sm text-ink-muted mb-3">
-            Your lists, photos and followers stay with you. Your old name becomes free for someone else to take.
-          </p>
-          <label htmlFor="new-username" className={label}>New username</label>
-          <div className="flex gap-2">
-            <input
-              id="new-username"
-              type="text"
-              autoComplete="off"
-              autoCapitalize="none"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={username}
-              className={`${input} py-2`}
-              required
-            />
-            <button type="submit" disabled={nameState.busy} className={`${primaryButton} px-4 shrink-0`}>
-              {nameState.busy ? 'Saving...' : 'Change'}
-            </button>
-          </div>
-          <Status state={nameState} />
-        </form>
-
+      <div className="mt-4 divide-y divide-line border-t border-line">
         <div>
-          <h3 className={`${heading} mb-1`}>Default city</h3>
-          <p className="text-sm text-ink-muted mb-3">The city the app opens to.</p>
-          <div className="inline-flex border border-line rounded-sm bg-card p-0.5" role="group" aria-label="Default city">
-            {Object.entries(cities).map(([key, info]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onHomeCityChange(key)}
-                aria-pressed={homeCity === key}
-                className={`px-4 py-2 rounded-sm uppercase tracking-wider text-xs font-semibold transition-colors ${
-                  homeCity === key ? 'bg-wine text-paper' : 'text-ink-soft hover:text-ink'
-                }`}
-              >
-                {info.name}
-              </button>
-            ))}
+          <div className={row}>
+            <span className={rowLabel}>Username</span>
+            <span className={rowValue}>@{username}</span>
+            {changeLink('name')}
+          </div>
+          {open === 'name' && (
+            <form onSubmit={submitName} className={inlineForm}>
+              <p className="text-xs text-ink-muted">Your lists, photos and followers stay with you. Your old name becomes free for someone else.</p>
+              <div className="flex gap-2">
+                <input
+                  aria-label="New username"
+                  type="text"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="New username"
+                  className={`${input} py-2`}
+                  required
+                  autoFocus
+                />
+                <button type="submit" disabled={nameState.busy} className={`${primaryButton} px-4 shrink-0`}>
+                  {nameState.busy ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          )}
+          <Status state={nameState} />
+        </div>
+
+        <div className={row}>
+          <span className={rowLabel}>Default city</span>
+          <div className="flex-1 flex justify-end sm:justify-start">
+            <div className="inline-flex border border-line rounded-sm bg-card p-0.5" role="group" aria-label="Default city">
+              {Object.entries(cities).map(([key, info]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onHomeCityChange(key)}
+                  aria-pressed={homeCity === key}
+                  className={`px-3 py-1 rounded-sm uppercase tracking-wider text-xs font-semibold transition-colors ${
+                    homeCity === key ? 'bg-wine text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {info.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <form onSubmit={submitEmail}>
-          <h3 className={`${heading} mb-1`}>Email</h3>
-          {isDemoMode ? (
-            <p className="text-sm text-ink-muted">Emails can't be changed in demo mode.</p>
-          ) : !hasEmail ? (
-            <p className="text-sm text-ink-muted">Add an email using the box at the top of the page.</p>
-          ) : (
-            <>
-              <p className="text-sm text-ink-muted mb-3">The email you log in with and get password reset links at.</p>
-              <label htmlFor="new-email" className={label}>New email</label>
+        <div>
+          <div className={row}>
+            <span className={rowLabel}>Email</span>
+            <span className={`${rowValue} ${email ? '' : 'text-ink-muted'}`}>{email || 'Not added yet'}</span>
+            {hasEmail && !isDemoMode && changeLink('email')}
+          </div>
+          {open === 'email' && (
+            <form onSubmit={submitEmail} className={inlineForm}>
               <input
-                id="new-email"
+                aria-label="New email"
                 type="email"
                 autoComplete="email"
                 value={emailForm.email}
                 onChange={(e) => setEmailForm({ ...emailForm, email: e.target.value })}
-                placeholder="you@example.com"
-                className={`${input} py-2 mb-2`}
+                placeholder="New email"
+                className={`${input} py-2`}
                 required
+                autoFocus
               />
-              <label htmlFor="email-password" className={label}>Current password</label>
-              <input
-                id="email-password"
-                type="password"
-                autoComplete="current-password"
-                value={emailForm.password}
-                onChange={(e) => setEmailForm({ ...emailForm, password: e.target.value })}
-                className={`${input} py-2 mb-3`}
-                required
-              />
-              <button type="submit" disabled={emailState.busy} className={`${primaryButton} px-4 py-2.5`}>
-                {emailState.busy ? 'Sending...' : 'Change email'}
-              </button>
-            </>
+              <div className="flex gap-2">
+                <input
+                  aria-label="Current password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={emailForm.password}
+                  onChange={(e) => setEmailForm({ ...emailForm, password: e.target.value })}
+                  placeholder="Current password"
+                  className={`${input} py-2`}
+                  required
+                />
+                <button type="submit" disabled={emailState.busy} className={`${primaryButton} px-4 shrink-0`}>
+                  {emailState.busy ? 'Sending...' : 'Save'}
+                </button>
+              </div>
+            </form>
           )}
           <Status state={emailState} />
-        </form>
+        </div>
 
-        <form onSubmit={submitPassword}>
-          <h3 className={`${heading} mb-1`}>Password</h3>
-          <p className="text-sm text-ink-muted mb-3">At least {MIN_PASSWORD_LENGTH} characters.</p>
-          <label htmlFor="current-password" className={label}>Current password</label>
-          <input
-            id="current-password"
-            type="password"
-            autoComplete="current-password"
-            value={passwordForm.current}
-            onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
-            className={`${input} py-2 mb-2`}
-            required
-          />
-          <label htmlFor="new-password" className={label}>New password</label>
-          <input
-            id="new-password"
-            type="password"
-            autoComplete="new-password"
-            minLength={MIN_PASSWORD_LENGTH}
-            value={passwordForm.next}
-            onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })}
-            className={`${input} py-2 mb-3`}
-            required
-          />
-          <button type="submit" disabled={passwordState.busy} className={`${primaryButton} px-4 py-2.5`}>
-            {passwordState.busy ? 'Saving...' : 'Change password'}
-          </button>
+        <div>
+          <div className={row}>
+            <span className={rowLabel}>Password</span>
+            <span className={`${rowValue} tracking-widest`}>••••••••</span>
+            {changeLink('password')}
+          </div>
+          {open === 'password' && (
+            <form onSubmit={submitPassword} className={inlineForm}>
+              <input
+                aria-label="Current password"
+                type="password"
+                autoComplete="current-password"
+                value={passwordForm.current}
+                onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
+                placeholder="Current password"
+                className={`${input} py-2`}
+                required
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <input
+                  aria-label="New password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={MIN_PASSWORD_LENGTH}
+                  value={passwordForm.next}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })}
+                  placeholder={`New password (${MIN_PASSWORD_LENGTH}+ characters)`}
+                  className={`${input} py-2`}
+                  required
+                />
+                <button type="submit" disabled={passwordState.busy} className={`${primaryButton} px-4 shrink-0`}>
+                  {passwordState.busy ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          )}
           <Status state={passwordState} />
-        </form>
-      </div>
+        </div>
 
-      <div className="mt-8 pt-6 border-t border-line">
-        {!showDelete ? (
-          <button onClick={() => setShowDelete(true)} className="text-sm text-wine hover:text-wine-dark underline underline-offset-2">
-            Delete my account
-          </button>
-        ) : (
-          <form onSubmit={submitDelete} className="max-w-md p-4 border border-wine/40 bg-wine/5 rounded-sm">
-            <h3 className={`${heading} mb-1`}>Delete your account</h3>
-            <p className="text-sm text-ink-soft mb-3">
-              This permanently deletes your lists, leaderboard votes, photos and username, and can't be undone.
-            </p>
-            <label htmlFor="delete-password" className={label}>Your password</label>
-            <input
-              id="delete-password"
-              type="password"
-              autoComplete="current-password"
-              value={deletePassword}
-              onChange={(e) => setDeletePassword(e.target.value)}
-              className={`${input} py-2 mb-3`}
-              required
-            />
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" disabled={deleteState.busy} className={`${primaryButton} px-4 py-2.5`}>
-                {deleteState.busy ? 'Deleting...' : 'Delete forever'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowDelete(false); setDeletePassword(''); }}
-                className={`${quietButton} px-4 py-2.5`}
-              >
-                Keep my account
-              </button>
-            </div>
-            <Status state={deleteState} />
-          </form>
-        )}
+        <div>
+          <div className={row}>
+            <span className={rowLabel}>Account</span>
+            <span className={`${rowValue} text-ink-muted`}>Delete everything you've saved</span>
+            {changeLink('delete', 'Delete')}
+          </div>
+          {open === 'delete' && (
+            <form onSubmit={submitDelete} className={`${inlineForm} p-3 border border-wine/40 bg-wine/5 rounded-sm`}>
+              <p className="text-sm text-ink-soft">
+                This permanently deletes your lists, leaderboard votes, photos, profile photo and username. It can't be undone.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  aria-label="Your password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Your password"
+                  className={`${input} py-2`}
+                  required
+                  autoFocus
+                />
+                <button type="submit" disabled={deleteState.busy} className={`${primaryButton} px-4 shrink-0`}>
+                  {deleteState.busy ? 'Deleting...' : 'Delete forever'}
+                </button>
+              </div>
+            </form>
+          )}
+          <Status state={deleteState} />
+        </div>
       </div>
     </div>
   );

@@ -8,7 +8,8 @@ import AuthScreen from './AuthScreen.jsx';
 import PlacesMap from './PlacesMap.jsx';
 import PhotoViewer from './PhotoViewer.jsx';
 import ProfileSettings from './ProfileSettings.jsx';
-import { preparePhoto, addPhoto, deletePhoto, loadMyPhotos, loadCategoryPhotos, photoPlaceId } from './photoStore.js';
+import Avatar from './Avatar.jsx';
+import { preparePhoto, addPhoto, deletePhoto, loadMyPhotos, loadCategoryPhotos, photoPlaceId, loadAvatars as fetchAvatars } from './photoStore.js';
 import { fuzzySearch, normalize } from './fuzzySearch.js';
 
 // What each category is, in every city.
@@ -303,6 +304,8 @@ export default function NYCBurgerRanker() {
   // Photos: your own, everyone's per category (loaded when the leaderboard opens), and
   // which spot's photos are open full screen.
   const [myPhotos, setMyPhotos] = useState([]);
+  // Everyone's profile photos, as { uid: picture }.
+  const [avatars, setAvatars] = useState({});
   const [categoryPhotos, setCategoryPhotos] = useState({});
   const [photoViewer, setPhotoViewer] = useState(null); // { title, category, placeId, mineOnly, startIndex }
   const [uploadingPhotoFor, setUploadingPhotoFor] = useState(null);
@@ -432,6 +435,7 @@ export default function NYCBurgerRanker() {
     setAllUsers([]);
     setSelectedUserProfile(null);
     setMyPhotos([]);
+    setAvatars({});
     setCategoryPhotos({});
     setPhotoViewer(null);
     setPhotoError({ key: null, message: '' });
@@ -467,6 +471,7 @@ export default function NYCBurgerRanker() {
         loadFollowers(user.uid),
         updateLeaderboard(firestore),
         loadMyPhotos(user.uid).then(setMyPhotos).catch((error) => console.error('Error loading photos:', error)),
+        loadAvatars(),
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -490,6 +495,14 @@ export default function NYCBurgerRanker() {
       }));
     } catch (error) {
       console.error('Error loading users:', error);
+    }
+  };
+
+  const loadAvatars = async () => {
+    try {
+      setAvatars(await fetchAvatars());
+    } catch (error) {
+      console.error('Error loading profile photos:', error);
     }
   };
 
@@ -899,7 +912,10 @@ export default function NYCBurgerRanker() {
     // Pick up spots people you follow added since you signed in.
     if (key === 'wantToTry' || key === 'tried' || key === 'map' || key === 'me') loadAllUsers();
     // And anyone who followed you since then.
-    if (key === 'me' && userId) loadFollowers(userId);
+    if (key === 'me' && userId) {
+      loadFollowers(userId);
+      loadAvatars();
+    }
   };
 
   // The header counts open your profile at the matching list.
@@ -1365,7 +1381,8 @@ export default function NYCBurgerRanker() {
           </div>
           <p className="font-display italic text-lg text-ink-soft mt-4">The city's finest burgers, martinis and pizza, ranked by you</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-ink-muted">
-            <button onClick={() => openView('me')} className="font-semibold text-ink hover:text-wine underline-offset-2 hover:underline">
+            <button onClick={() => openView('me')} className="font-semibold text-ink hover:text-wine underline-offset-2 hover:underline flex items-center gap-2">
+              <Avatar src={avatars[userId]} username={username} size={28} />
               @{username}
             </button>
             <span>·</span>
@@ -2154,8 +2171,22 @@ export default function NYCBurgerRanker() {
         )}
 
         {view === 'me' && (
-          <div className="space-y-6 lg:space-y-8">
-          <div className="grid gap-6 lg:gap-8 lg:grid-cols-2 items-start">
+          <div className="grid gap-6 lg:gap-8 grid-cols-1 lg:grid-cols-2 items-start">
+            <div className="grid gap-6 lg:gap-8 grid-cols-1">
+            <ProfileSettings
+              username={username}
+              email={email}
+              hasEmail={hasEmail}
+              homeCity={homeCity}
+              cities={CITIES}
+              onHomeCityChange={makeHomeCity}
+              onRenamed={(name) => { setUsername(name); loadAllUsers(); }}
+              userId={userId}
+              avatar={avatars[userId]}
+              onAvatarChange={(image) => setAvatars(prev => ({ ...prev, [userId]: image }))}
+              onLogOut={handleLogOut}
+              ui={{ panel, heading, eyebrow, input, primaryButton, quietButton }}
+            />
             {/* Search Users */}
             <div className={panel}>
               <h3 className={`${heading} mb-4`}>Discover Users</h3>
@@ -2173,9 +2204,12 @@ export default function NYCBurgerRanker() {
               <div className="divide-y divide-line border-y border-line max-h-96 overflow-y-auto">
                 {filteredUsers.slice(0, 10).map((user) => (
                   <div key={user.userId} className="flex items-center justify-between py-3 px-2 hover:bg-paper/60">
-                    <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
-                      <div className="font-semibold text-ink">@{user.username}</div>
-                      <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                    <div className="flex-1 cursor-pointer flex items-center gap-3" onClick={() => viewUserProfile(user.userId)}>
+                      <Avatar src={avatars[user.userId]} username={user.username} size={36} />
+                      <div>
+                        <div className="font-semibold text-ink">@{user.username}</div>
+                        <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                      </div>
                     </div>
                     {following.includes(user.userId) ? (
                       <button onClick={() => unfollowUser(user.userId)} className={`${quietButton} px-4 py-2`}>
@@ -2191,8 +2225,9 @@ export default function NYCBurgerRanker() {
                 ))}
               </div>
             </div>
+            </div>
 
-            <div className="grid gap-6 lg:gap-8">
+            <div className="grid gap-6 lg:gap-8 grid-cols-1">
             {/* Following List */}
             <div id="people-you-follow" className={`${panel} scroll-mt-4`}>
               <h3 className={`${heading} mb-4`}>People You Follow ({followingCount})</h3>
@@ -2206,13 +2241,16 @@ export default function NYCBurgerRanker() {
                 <div className="divide-y divide-line border-y border-line">
                   {followingUsers.map((user) => (
                     <div key={user.userId} className="flex items-center justify-between py-3 px-2 hover:bg-paper/60">
-                      <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
-                        <div className="font-semibold text-ink">@{user.username}</div>
-                        <div className="text-xs text-ink-muted">
-                          {user.rankingCount} spots ranked
-                          {sharedWantCount(wantToTry, user.wantToTry) > 0 && (
-                            <span className="text-wine"> · {sharedWantCount(wantToTry, user.wantToTry)} you both want to try</span>
-                          )}
+                      <div className="flex-1 cursor-pointer flex items-center gap-3" onClick={() => viewUserProfile(user.userId)}>
+                        <Avatar src={avatars[user.userId]} username={user.username} size={36} />
+                        <div>
+                          <div className="font-semibold text-ink">@{user.username}</div>
+                          <div className="text-xs text-ink-muted">
+                            {user.rankingCount} spots ranked
+                            {sharedWantCount(wantToTry, user.wantToTry) > 0 && (
+                              <span className="text-wine"> · {sharedWantCount(wantToTry, user.wantToTry)} you both want to try</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <button onClick={() => viewUserProfile(user.userId)} className={`${quietButton} px-4 py-2`}>
@@ -2237,9 +2275,12 @@ export default function NYCBurgerRanker() {
                 <div className="divide-y divide-line border-y border-line">
                   {followerUsers.map((user) => (
                     <div key={user.userId} className="flex items-center justify-between gap-2 py-3 px-2 hover:bg-paper/60">
-                      <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
-                        <div className="font-semibold text-ink">@{user.username}</div>
-                        <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                      <div className="flex-1 cursor-pointer flex items-center gap-3" onClick={() => viewUserProfile(user.userId)}>
+                        <Avatar src={avatars[user.userId]} username={user.username} size={36} />
+                        <div>
+                          <div className="font-semibold text-ink">@{user.username}</div>
+                          <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
+                        </div>
                       </div>
                       {following.includes(user.userId) ? (
                         <button onClick={() => viewUserProfile(user.userId)} className={`${quietButton} px-4 py-2`}>
@@ -2258,18 +2299,6 @@ export default function NYCBurgerRanker() {
             </div>
             </div>
           </div>
-          <ProfileSettings
-            username={username}
-            email={email}
-            hasEmail={hasEmail}
-            homeCity={homeCity}
-            cities={CITIES}
-            onHomeCityChange={makeHomeCity}
-            onRenamed={(name) => { setUsername(name); loadAllUsers(); }}
-            onLogOut={handleLogOut}
-            ui={{ panel, heading, eyebrow, input, primaryButton, quietButton }}
-          />
-          </div>
         )}
 
         {view === 'profile' && selectedUserProfile && (
@@ -2283,9 +2312,12 @@ export default function NYCBurgerRanker() {
 
             <div className={panel}>
               <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
-                  <p className="text-sm text-ink-muted">{countAllRanked(selectedUserProfile.lists)} spots ranked</p>
+                <div className="flex items-center gap-4">
+                  <Avatar src={avatars[selectedUserProfile.userId]} username={selectedUserProfile.username} size={64} />
+                  <div>
+                    <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
+                    <p className="text-sm text-ink-muted">{countAllRanked(selectedUserProfile.lists)} spots ranked</p>
+                  </div>
                 </div>
                 {following.includes(selectedUserProfile.userId) ? (
                   <button onClick={() => unfollowUser(selectedUserProfile.userId)} className={`${quietButton} px-6 py-3`}>

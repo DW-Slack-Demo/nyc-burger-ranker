@@ -4,6 +4,8 @@
 //   photoFiles/{uid}_{n}  the larger picture, loaded only when someone opens it
 // n runs from 1 to MAX_PHOTOS_PER_USER, which the security rules enforce, so each
 // account can keep at most that many photos.
+//   avatars/{uid}         each account's profile photo, a small square
+
 import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
 
 export const MAX_PHOTOS_PER_USER = 30;
@@ -11,6 +13,7 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const FULL = { edge: 1280, maxChars: 380000 };
 const THUMB = { edge: 320, maxChars: 55000 };
+const AVATAR = { edge: 256, maxChars: 30000, square: true };
 
 // Firestore document ids can't hold every character a place key can, so photos are
 // filed under a cleaned-up version of it.
@@ -30,18 +33,23 @@ function loadImage(file) {
 }
 
 // Redraws the picture at most `edge` pixels on its longest side as a JPEG, lowering the
-// quality (then the size) until it fits. Redrawing also drops the original's metadata,
+// quality (then the size) until it fits. `square` crops it to its middle square first. Redrawing also drops the original's metadata,
 // such as the GPS location phones store in photos.
-function toJpeg(img, { edge, maxChars }) {
-  let scale = Math.min(1, edge / Math.max(img.naturalWidth, img.naturalHeight));
+function toJpeg(img, { edge, maxChars, square = false }) {
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const width = square ? side : img.naturalWidth;
+  const height = square ? side : img.naturalHeight;
+  const left = (img.naturalWidth - width) / 2;
+  const top = (img.naturalHeight - height) / 2;
+  let scale = Math.min(1, edge / Math.max(width, height));
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
     const context = canvas.getContext('2d');
     context.fillStyle = '#fff'; // transparent PNGs would otherwise turn black
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+    context.drawImage(img, left, top, width, height, 0, 0, canvas.width, canvas.height);
     for (const quality of [0.82, 0.7, 0.55]) {
       const data = canvas.toDataURL('image/jpeg', quality);
       if (data.length <= maxChars) return data;
@@ -51,11 +59,38 @@ function toJpeg(img, { edge, maxChars }) {
   throw new Error("That picture couldn't be made small enough to save.");
 }
 
-export async function preparePhoto(file) {
+async function loadPickedImage(file) {
   if (!file.type.startsWith('image/')) throw new Error('Please pick a picture file.');
   if (file.size > MAX_UPLOAD_BYTES) throw new Error('That picture is over 20 MB. Please pick a smaller one.');
-  const img = await loadImage(file);
+  return loadImage(file);
+}
+
+export async function preparePhoto(file) {
+  const img = await loadPickedImage(file);
   return { image: toJpeg(img, FULL), thumb: toJpeg(img, THUMB) };
+}
+
+// Shrinks a picture to a small square profile photo and saves it, replacing any earlier one.
+export async function saveAvatar(uid, file) {
+  const image = toJpeg(await loadPickedImage(file), AVATAR);
+  const { db } = await getFirebase();
+  const { doc, setDoc } = await loadFirestoreSdk();
+  await withTimeout(setDoc(doc(db, 'avatars', uid), { userId: uid, image, updatedAt: new Date().toISOString() }));
+  return image;
+}
+
+export async function removeAvatar(uid) {
+  const { db } = await getFirebase();
+  const { doc, deleteDoc } = await loadFirestoreSdk();
+  await withTimeout(deleteDoc(doc(db, 'avatars', uid)));
+}
+
+// Everyone's profile photos, as { uid: picture }.
+export async function loadAvatars() {
+  const { db } = await getFirebase();
+  const { collection, getDocs } = await loadFirestoreSdk();
+  const snapshot = await withTimeout(getDocs(collection(db, 'avatars')));
+  return Object.fromEntries(snapshot.docs.map((d) => [d.id, d.data().image]));
 }
 
 const toPhoto = (d) => ({ id: d.id, ...d.data() });

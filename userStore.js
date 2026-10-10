@@ -166,8 +166,8 @@ export async function renameUser(uid, oldName, newName) {
     .catch((error) => console.warn('Could not rename a leaderboard entry:', error))));
 }
 
-// Removes everything the account has saved: profile, lists, leaderboard entries, photos
-// and username. Done in one step, so nothing is left half deleted.
+// Removes everything the account has saved: profile, lists, leaderboard entries, photos,
+// username and profile photo. Done in one step, so nothing is left half deleted.
 export async function deleteUserData(uid, username) {
   const { db } = await getFirebase();
   const { doc, getDoc, writeBatch, collection, query, where, getDocs } = await loadFirestoreSdk();
@@ -183,6 +183,7 @@ export async function deleteUserData(uid, username) {
   });
   submissions.docs.forEach((d) => batch.delete(doc(db, 'submissions', d.id)));
   if (claim.exists() && claim.data().uid === uid) batch.delete(nameRef);
+  batch.delete(doc(db, 'avatars', uid));
   batch.delete(doc(db, 'users', uid));
   await withTimeout(batch.commit());
 }

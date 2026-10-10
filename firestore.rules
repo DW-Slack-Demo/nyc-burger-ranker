@@ -108,5 +108,18 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+
+    // Each account's profile photo: a small JPEG only that account can set or remove.
+    match /avatars/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['userId', 'image', 'updatedAt'])
+        && request.resource.data.userId == uid
+        && isJpeg(request.resource.data.image, 40000)
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 40;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }
