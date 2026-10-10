@@ -4,7 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Top Shelf</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=DM+Sans:opsz,wght@9..40,400..700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Bistro palette: cream paper, espresso ink, bordeaux and brass accents.
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#F5EEE1',
+            card: '#FCF8F1',
+            line: '#DDD0BA',
+            ink: { DEFAULT: '#241C17', soft: '#5C4F44', muted: '#8C7E70' },
+            wine: { DEFAULT: '#6F1D2A', dark: '#561520', light: '#F3E3E0' },
+            brass: { DEFAULT: '#A6814A', light: '#EFE4CF' },
+            vert: { DEFAULT: '#2F4A3B', dark: '#233A2D', light: '#E3EAE2' },
+          },
+          fontFamily: {
+            display: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          },
+        }
+      }
+    };
+  </script>
   <style>
     @keyframes spin {
       to { transform: rotate(360deg); }
@@ -14,7 +39,7 @@
     }
   </style>
 </head>
-<body class="bg-gradient-to-br from-orange-50 to-red-50 min-h-screen">
+<body class="bg-paper text-ink font-sans antialiased min-h-screen">
   <div id="root"></div>
   <script type="module" src="/main.jsx"></script>
 </body>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, GripVertical, Star, Trophy, MapPin, MessageSquare, Trash2, Plus, Sparkles, Tag, Filter, X, User, UserPlus, Users, Settings, LogOut } from 'lucide-react';
+import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, LogOut } from 'lucide-react';
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage } from './firebase.js';
 import { watchAuth, logOut } from './auth.js';
@@ -528,12 +528,21 @@ export default function NYCBurgerRanker() {
     }
   };
 
+  // Shared bistro styles.
+  const panel = 'bg-card border border-line rounded-sm p-6';
+  const eyebrow = 'text-[11px] uppercase tracking-[0.2em] text-brass font-semibold';
+  const heading = 'font-display text-2xl text-ink';
+  const input = 'w-full px-4 py-3 bg-white/70 border border-line rounded-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-wine focus:border-wine';
+  const primaryButton = 'bg-wine text-paper rounded-sm uppercase tracking-wider text-xs font-semibold hover:bg-wine-dark transition-colors disabled:bg-ink-muted';
+  const quietButton = 'border border-line text-ink-soft rounded-sm uppercase tracking-wider text-xs font-semibold hover:border-ink-soft hover:text-ink transition-colors';
+  const chip = 'text-[11px] border border-line text-ink-soft px-2 py-0.5 rounded-sm';
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">🍔</div>
-          <div className="text-gray-600">Loading...</div>
+          <div className="font-display italic text-4xl text-wine mb-2">Top Shelf</div>
+          <div className={eyebrow}>Loading</div>
         </div>
       </div>
     );
@@ -541,19 +550,16 @@ export default function NYCBurgerRanker() {
 
   if (initError) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
-          <p className="text-gray-700">{initError}</p>
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className={`${panel} p-8 max-w-md w-full text-center`}>
+          <p className="text-ink-soft">{initError}</p>
           <div className="mt-6 flex justify-center gap-3">
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-orange-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-600"
-            >
+            <button onClick={() => window.location.reload()} className={`${primaryButton} px-5 py-3`}>
               Try again
             </button>
             <button
               onClick={async () => { await logOut().catch(() => {}); setInitError(''); }}
-              className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-300"
+              className={`${quietButton} px-5 py-3`}
             >
               Log out
             </button>
@@ -568,134 +574,133 @@ export default function NYCBurgerRanker() {
   }
 
   const filteredLeaderboard = selectedTags.length > 0
-    ? leaderboard.filter(burger => 
+    ? leaderboard.filter(burger =>
         burger.tags.some(tag => selectedTags.includes(tag))
       )
     : leaderboard;
 
   const filteredUsers = userSearchQuery.trim()
-    ? allUsers.filter(u => 
-        u.username.toLowerCase().includes(userSearchQuery.toLowerCase()) && 
+    ? allUsers.filter(u =>
+        u.username.toLowerCase().includes(userSearchQuery.toLowerCase()) &&
         u.userId !== userId
       )
     : allUsers.filter(u => u.userId !== userId);
 
   const followingUsers = allUsers.filter(u => following.includes(u.userId));
 
+  const views = [
+    { key: 'ranking', label: 'My Ranking' },
+    { key: 'leaderboard', label: 'Leaderboard' },
+    { key: 'following', label: `Following (${following.length})` },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-6 pt-8">
-          <h1 className="text-5xl font-bold text-gray-800 mb-2">🍔🍸🍕 Top Shelf</h1>
-          <p className="text-gray-600">Rank your top 10 burgers, martinis and pizza in New York City</p>
-          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
-            <User className="w-4 h-4 text-orange-600" />
-            <span className="font-medium text-gray-700">@{username}</span>
-            <span className="text-gray-500">•</span>
-            <span className="text-gray-600">{following.length} following</span>
-            <span className="text-gray-500">•</span>
-            <span className="text-gray-600">{followers.length} followers</span>
-            <span className="text-gray-500">•</span>
-            <button onClick={handleLogOut} className="text-gray-600 hover:text-orange-600 flex items-center gap-1">
-              <LogOut className="w-4 h-4" />
+    <div className="min-h-screen px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="text-center pt-12 pb-8">
+          <div className={eyebrow}>New York City</div>
+          <h1 className="font-display italic text-6xl sm:text-7xl text-wine mt-2">Top Shelf</h1>
+          <div className="flex items-center justify-center gap-3 mt-4" aria-hidden="true">
+            <span className="h-px w-16 bg-brass" />
+            <span className="text-brass text-xs">◆</span>
+            <span className="h-px w-16 bg-brass" />
+          </div>
+          <p className="font-display italic text-lg text-ink-soft mt-4">The city's finest burgers, martinis and pizza, ranked by you</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-ink-muted">
+            <span className="font-semibold text-ink">@{username}</span>
+            <span>·</span>
+            <span>{following.length} following</span>
+            <span>·</span>
+            <span>{followers.length} followers</span>
+            <span>·</span>
+            <button onClick={handleLogOut} className="hover:text-wine flex items-center gap-1">
+              <LogOut className="w-3.5 h-3.5" />
               Log out
             </button>
           </div>
           {saveStatus && (
-            <div className={`mt-1 text-xs ${saveStatus === 'error' ? 'text-red-600' : 'text-gray-500'}`}>
+            <div className={`mt-1 text-xs ${saveStatus === 'error' ? 'text-wine' : 'text-ink-muted'}`}>
               {saveStatus === 'saving' && 'Saving your lists...'}
               {saveStatus === 'saved' && 'All changes saved'}
               {saveStatus === 'error' && 'Could not save your lists. Check your connection.'}
             </div>
           )}
-        </div>
+        </header>
 
-        {view !== 'following' && (
-          <div className="flex justify-center gap-2 mb-4">
-            {CATEGORY_KEYS.map((key) => (
+        <nav className="border-y border-line mb-8">
+          {view !== 'following' && (
+            <div className="flex justify-center gap-6 sm:gap-10 pt-4">
+              {CATEGORY_KEYS.map((key) => (
+                <button
+                  key={key}
+                  onClick={() => switchCategory(key)}
+                  className={`font-display text-xl sm:text-2xl pb-1 border-b-2 transition-colors ${
+                    category === key ? 'text-wine border-wine italic' : 'text-ink-soft border-transparent hover:text-ink'
+                  }`}
+                >
+                  {CATEGORIES[key].label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 sm:gap-x-10 py-3">
+            {views.map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => switchCategory(key)}
-                className={`px-4 py-2 rounded-full font-medium transition-all ${
-                  category === key ? 'bg-gray-800 text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-100'
+                onClick={() => setView(key)}
+                className={`uppercase tracking-[0.18em] text-xs font-semibold whitespace-nowrap py-1 transition-colors ${
+                  view === key ? 'text-wine' : 'text-ink-muted hover:text-ink'
                 }`}
               >
-                {CATEGORIES[key].emoji} {CATEGORIES[key].label}
+                {label}
               </button>
             ))}
           </div>
-        )}
-
-        <div className="flex gap-2 mb-6 bg-white rounded-lg p-1 shadow-sm overflow-x-auto">
-          <button
-            onClick={() => setView('ranking')}
-            className={`flex-1 py-3 px-4 rounded-md font-medium transition-all whitespace-nowrap ${
-              view === 'ranking' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            My Ranking
-          </button>
-          <button
-            onClick={() => setView('leaderboard')}
-            className={`flex-1 py-3 px-4 rounded-md font-medium transition-all whitespace-nowrap ${
-              view === 'leaderboard' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            <Trophy className="inline w-5 h-5 mr-1" />
-            Leaderboard
-          </button>
-          <button
-            onClick={() => setView('following')}
-            className={`flex-1 py-3 px-4 rounded-md font-medium transition-all whitespace-nowrap ${
-              view === 'following' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            <Users className="inline w-5 h-5 mr-1" />
-            Following ({following.length})
-          </button>
-        </div>
+        </nav>
 
         {view === 'ranking' && (
-          <>
+          <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+            <div className="space-y-6">
             {/* Search */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <div className={panel}>
+              <div className={`${eyebrow} mb-3`}>Find a spot</div>
               <div className="flex gap-2">
                 <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                  <Search className="absolute left-3 top-3.5 text-ink-muted w-4 h-4" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
                     placeholder={cat.searchPlaceholder}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className={`${input} pl-9`}
                   />
                 </div>
                 <button
                   onClick={searchBurgers}
                   disabled={isSearching}
-                  className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-colors disabled:bg-gray-300"
+                  className={`${primaryButton} px-5`}
                 >
                   {isSearching ? 'Searching...' : 'Search'}
                 </button>
               </div>
 
               {searchResults.length > 0 && (
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 divide-y divide-line border-y border-line">
                   {searchResults.map((place, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
+                    <div key={idx} className="flex items-center justify-between py-3">
                       <div className="flex-1">
-                        <div className="font-medium text-gray-800">{place.name}</div>
-                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <div className="font-display text-lg text-ink">{place.name}</div>
+                        <div className="text-sm text-ink-muted flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {place.address}
                         </div>
                       </div>
                       <button
                         onClick={() => addBurger(place)}
-                        className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-1"
+                        className={`${primaryButton} px-4 py-2 flex items-center gap-1`}
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                         Add
                       </button>
                     </div>
@@ -705,12 +710,12 @@ export default function NYCBurgerRanker() {
             </div>
 
             {/* AI Search */}
-            <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg shadow-sm p-6 mb-6 border-2 border-purple-200">
+            <div className="bg-vert-light border border-vert/30 rounded-sm p-6">
               <div className="flex items-center gap-2 mb-1">
-                <Sparkles className="w-5 h-5 text-purple-600" />
-                <h3 className="text-lg font-bold text-gray-800">AI Finder</h3>
+                <Sparkles className="w-4 h-4 text-vert" />
+                <h3 className="font-display text-xl text-vert">Ask the maître d'</h3>
               </div>
-              <p className="text-sm text-gray-600 mb-3">Describe what you're after, for burgers, martinis or pizza anywhere in the city.</p>
+              <p className="text-sm italic text-ink-soft mb-3">Describe what you're after, for burgers, martinis or pizza anywhere in the city.</p>
               <div className="flex gap-2 mb-3">
                 <input
                   type="text"
@@ -719,42 +724,42 @@ export default function NYCBurgerRanker() {
                   onKeyPress={(e) => e.key === 'Enter' && handleAiSearch()}
                   placeholder={cat.aiPlaceholder}
                   maxLength={300}
-                  className="flex-1 px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  className={`${input} focus:ring-vert focus:border-vert`}
                 />
                 <button
                   onClick={handleAiSearch}
                   disabled={isAiSearching}
-                  className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 flex items-center gap-2"
+                  className="bg-vert text-paper rounded-sm uppercase tracking-wider text-xs font-semibold px-5 hover:bg-vert-dark disabled:bg-ink-muted whitespace-nowrap"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  {isAiSearching ? 'Thinking...' : 'Ask AI'}
+                  {isAiSearching ? 'Thinking...' : 'Ask'}
                 </button>
               </div>
               {aiSearchMessage && (
-                <div className="bg-white p-4 rounded-lg border border-purple-200">
-                  <p className="text-sm text-gray-700">{aiSearchMessage}</p>
+                <div className="bg-card p-4 rounded-sm border border-vert/20">
+                  <p className="text-sm text-ink-soft">{aiSearchMessage}</p>
                 </div>
               )}
               {aiSearchResults.length > 0 && (
-                <div className="space-y-2">
+                <div className="divide-y divide-vert/20 border-y border-vert/20">
                   {aiSearchResults.map((place) => {
                     const target = CATEGORIES[place.category];
                     return (
-                      <div key={place.place_id} className="bg-white p-4 rounded-lg border border-purple-200 flex items-start justify-between gap-3">
+                      <div key={place.place_id} className="py-3 flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-gray-800">
-                            {target ? `${target.emoji} ` : ''}{place.name}
-                            <span className="font-normal text-gray-500"> · {place.neighborhood}</span>
+                          {target && <div className="text-[11px] uppercase tracking-[0.18em] text-vert font-semibold">{target.label}</div>}
+                          <p className="font-display text-lg text-ink leading-tight">
+                            {place.name}
+                            <span className="font-sans text-sm text-ink-muted"> · {place.neighborhood}</span>
                           </p>
-                          <p className="text-sm text-gray-700">{place.why}</p>
-                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" />{place.address}</p>
+                          <p className="text-sm italic text-ink-soft">{place.why}</p>
+                          <p className="text-xs text-ink-muted mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" />{place.address}</p>
                         </div>
                         {target && (
                           <button
                             onClick={() => addToList(place, place.category)}
-                            className="shrink-0 text-sm bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 flex items-center gap-1"
+                            className="shrink-0 border border-vert text-vert rounded-sm uppercase tracking-wider text-[11px] font-semibold px-3 py-2 hover:bg-vert hover:text-paper transition-colors flex items-center gap-1"
                           >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-3.5 h-3.5" />
                             Add to {target.label}
                           </button>
                         )}
@@ -766,45 +771,49 @@ export default function NYCBurgerRanker() {
             </div>
 
             {/* Recommended */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-800">🏆 {cat.recommendedTitle}</h3>
-                <button onClick={() => setShowRecommended(!showRecommended)} className="text-sm text-orange-600">
+            <div className={panel}>
+              <div className="flex items-baseline justify-between gap-3 mb-1">
+                <h3 className={heading}>{cat.recommendedTitle}</h3>
+                <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
                   {showRecommended ? 'Hide' : 'Show'}
                 </button>
               </div>
               {showRecommended && (
                 <div>
-                  <p className="text-sm text-gray-600 mb-4">Drag and drop these into your ranking!</p>
-                  <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
+                  <p className="text-sm italic text-ink-muted mb-4">Drag these into your ranking, or tap + to add.</p>
+                  <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
                     {cat.recommended.map((burger, idx) => (
                       <div
                         key={idx}
                         draggable
                         onDragStart={() => handleDragStart(idx, 'recommended')}
                         onDragEnd={handleDragEnd}
-                        className={`flex items-center justify-between p-3 bg-gray-50 rounded-lg border-2 cursor-move ${
+                        className={`flex items-center justify-between py-3 px-2 cursor-move transition-colors ${
                           dragSource === 'recommended' && draggedIndex === idx
-                            ? 'border-orange-500 bg-orange-50 shadow-lg'
-                            : 'border-transparent hover:border-gray-300'
+                            ? 'bg-wine-light'
+                            : 'hover:bg-paper'
                         }`}
                       >
                         <div className="flex-1 flex items-center gap-2">
-                          <GripVertical className="w-4 h-4 text-gray-400" />
+                          <GripVertical className="w-4 h-4 text-line" />
                           <div>
-                            <div className="font-medium text-gray-800">{burger.name}</div>
-                            <div className="text-xs text-gray-600">{burger.address}</div>
-                            <div className="flex gap-1 mt-1">
+                            <div className="font-display text-lg text-ink leading-tight">{burger.name}</div>
+                            <div className="text-xs text-ink-muted">{burger.address}</div>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
                               {burger.source && (
-                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{burger.source}</span>
+                                <span className="text-[11px] italic text-wine px-0.5">{burger.source}</span>
                               )}
                               {burger.tags.slice(0, 2).map((tag, i) => (
-                                <span key={i} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{tag}</span>
+                                <span key={i} className={chip}>{tag}</span>
                               ))}
                             </div>
                           </div>
                         </div>
-                        <button onClick={() => addBurger(burger)} className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg ml-2">
+                        <button
+                          onClick={() => addBurger(burger)}
+                          aria-label={`Add ${burger.name}`}
+                          className="w-8 h-8 flex items-center justify-center border border-wine text-wine rounded-full hover:bg-wine hover:text-paper transition-colors ml-2"
+                        >
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
@@ -813,20 +822,26 @@ export default function NYCBurgerRanker() {
                 </div>
               )}
             </div>
+            </div>
 
-            {/* Ranked List - abbreviated for space */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-1">Your Top {cat.label}</h2>
-              <p className="text-sm text-gray-600 mb-4">{rankedItems.length} of 10 {cat.plural} ranked</p>
-              
+            {/* Ranked List */}
+            <div>
+            <div className={panel}>
+              <div className={eyebrow}>{rankedItems.length} of 10 ranked</div>
+              <h2 className="font-display text-3xl text-ink mt-1 mb-5">Your Top {cat.label}</h2>
+
               {rankedItems.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-6xl mb-4">{cat.emoji}</div>
-                  <p>Drag {cat.plural} from the recommended list or search to add them!</p>
+                <div
+                  className="text-center py-16 border border-dashed border-line rounded-sm text-ink-muted"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, 0)}
+                >
+                  <div className="font-display italic text-2xl text-ink-soft mb-2">Your list is empty</div>
+                  <p className="text-sm">Drag {cat.plural} from the recommended list or search to add them.</p>
                 </div>
               ) : (
-                <div 
-                  className="space-y-3"
+                <div
+                  className="divide-y divide-line border-y border-line"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, rankedItems.length)}
                 >
@@ -837,75 +852,51 @@ export default function NYCBurgerRanker() {
                       onDragStart={() => handleDragStart(index)}
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDragEnd={handleDragEnd}
-                      className={`border-2 rounded-lg p-4 cursor-move ${
+                      className={`py-5 px-2 cursor-move transition-colors ${
                         draggedIndex === index && dragSource === 'ranked'
-                          ? 'border-orange-500 bg-orange-50 shadow-lg'
-                          : 'border-gray-200 bg-white hover:border-orange-300'
+                          ? 'bg-wine-light'
+                          : 'hover:bg-paper/60'
                       }`}
                     >
                       <div className="flex items-start gap-4">
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-10 h-10 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold text-lg">
-                            {index + 1}
-                          </div>
-                          <GripVertical className="w-5 h-5 text-gray-400" />
+                        <div className="flex flex-col items-center gap-1 w-10 flex-shrink-0">
+                          <div className="font-display italic text-4xl leading-none text-wine">{index + 1}</div>
+                          <GripVertical className="w-4 h-4 text-line" />
                         </div>
 
-                        <div className="flex-1 space-y-3">
+                        <div className="flex-1 min-w-0 space-y-3">
                           <div>
                             <input
                               type="text"
                               value={burger.name}
                               onChange={(e) => updateBurger(index, 'name', e.target.value)}
-                              className="font-bold text-gray-800 text-lg w-full border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none bg-transparent px-1"
+                              className="font-display text-xl text-ink w-full border-b border-transparent hover:border-line focus:border-wine focus:outline-none bg-transparent px-1"
                             />
                             <div className="flex items-start gap-1 mt-1">
-                              <MapPin className="w-3 h-3 mt-1 text-gray-400" />
+                              <MapPin className="w-3 h-3 mt-1 text-ink-muted" />
                               <input
                                 type="text"
                                 value={burger.address}
                                 onChange={(e) => updateBurger(index, 'address', e.target.value)}
-                                className="text-sm text-gray-600 flex-1 border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none bg-transparent px-1"
+                                className="text-sm text-ink-muted flex-1 border-b border-transparent hover:border-line focus:border-wine focus:outline-none bg-transparent px-1"
                                 placeholder="Add address..."
                               />
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Rating:</span>
-                            <div className="flex gap-1">
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                            <div className="flex gap-0.5" aria-label="Rating">
                               {[1, 2, 3, 4, 5].map((star) => (
-                                <button key={star} onClick={() => updateBurger(index, 'rating', star)}>
-                                  <Star className={`w-6 h-6 ${star <= burger.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />
+                                <button key={star} onClick={() => updateBurger(index, 'rating', star)} aria-label={`${star} stars`}>
+                                  <Star className={`w-5 h-5 ${star <= burger.rating ? 'fill-brass text-brass' : 'text-line'}`} />
                                 </button>
                               ))}
                             </div>
-                          </div>
-
-                          <div>
-                            <label className="text-sm text-gray-600 flex items-center gap-1 mb-1">
-                              <MessageSquare className="w-4 h-4" />
-                              Comments
-                            </label>
-                            <textarea
-                              value={burger.comments}
-                              onChange={(e) => updateBurger(index, 'comments', e.target.value)}
-                              placeholder={cat.commentPlaceholder}
-                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
-                              rows="2"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-sm text-gray-600 flex items-center gap-1 mb-2">
-                              <Tag className="w-4 h-4" />
-                              Labels
-                            </label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               {burger.tags?.map((tag, tagIdx) => (
-                                <span key={tagIdx} className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded">
+                                <span key={tagIdx} className={`${chip} inline-flex items-center gap-1`}>
                                   {tag}
-                                  <button onClick={() => updateBurger(index, 'tags', burger.tags.filter((_, i) => i !== tagIdx))}>
+                                  <button onClick={() => updateBurger(index, 'tags', burger.tags.filter((_, i) => i !== tagIdx))} aria-label={`Remove ${tag}`}>
                                     <X className="w-3 h-3" />
                                   </button>
                                 </span>
@@ -917,17 +908,26 @@ export default function NYCBurgerRanker() {
                                     e.target.value = '';
                                   }
                                 }}
-                                className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-600"
+                                className="text-[11px] bg-transparent border border-dashed border-line rounded-sm px-1.5 py-0.5 text-ink-muted"
                               >
-                                <option value="">+ Add label</option>
+                                <option value="">+ Label</option>
                                 {cat.tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
                               </select>
                             </div>
                           </div>
+
+                          <textarea
+                            value={burger.comments}
+                            onChange={(e) => updateBurger(index, 'comments', e.target.value)}
+                            placeholder={cat.commentPlaceholder}
+                            aria-label="Tasting notes"
+                            className="w-full px-3 py-2 bg-white/70 border border-line rounded-sm text-sm italic text-ink-soft placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-wine focus:border-wine"
+                            rows="2"
+                          />
                         </div>
 
-                        <button onClick={() => removeBurger(index)} className="text-red-500 hover:text-red-700 p-2">
-                          <Trash2 className="w-5 h-5" />
+                        <button onClick={() => removeBurger(index)} aria-label={`Remove ${burger.name}`} className="text-ink-muted hover:text-wine p-2">
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -937,102 +937,90 @@ export default function NYCBurgerRanker() {
             </div>
 
             {rankedItems.length > 0 && (
-              <div className="text-center">
+              <div className="text-center mt-6">
                 <button
                   onClick={saveRanking}
-                  className="bg-green-500 text-white px-8 py-4 rounded-lg text-lg font-bold hover:bg-green-600 shadow-lg"
+                  className="bg-wine text-paper px-10 py-4 rounded-sm uppercase tracking-[0.18em] text-sm font-semibold hover:bg-wine-dark transition-colors"
                 >
-                  {submitted[category] ? `✓ Update My ${cat.label} Ranking` : `Submit My ${cat.label} Ranking`}
+                  {submitted[category] ? `Update My ${cat.label} Ranking` : `Submit My ${cat.label} Ranking`}
                 </button>
-                <p className="text-sm text-gray-600 mt-2">Your ranking will be visible to your followers!</p>
+                <p className="text-sm italic text-ink-muted mt-2">Your ranking will be visible to your followers.</p>
               </div>
             )}
-          </>
+            </div>
+          </div>
         )}
 
         {view === 'leaderboard' && (
-          <div>
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Filter className="w-5 h-5 text-gray-600" />
-                <span className="font-medium text-gray-800">Filter by labels:</span>
-              </div>
+          <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] items-start">
+            <div className={panel}>
+              <div className={`${eyebrow} mb-3`}>Filter by label</div>
               <div className="flex flex-wrap gap-2">
                 {cat.tags.map(tag => (
                   <button
                     key={tag}
                     onClick={() => {
-                      setSelectedTags(prev => 
+                      setSelectedTags(prev =>
                         prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
                       );
                     }}
-                    className={`px-3 py-1 rounded-full text-sm ${
+                    className={`px-3 py-1 rounded-sm text-sm border transition-colors ${
                       selectedTags.includes(tag)
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        ? 'bg-wine border-wine text-paper'
+                        : 'border-line text-ink-soft hover:border-ink-soft'
                     }`}
                   >
                     {tag}
                   </button>
                 ))}
                 {selectedTags.length > 0 && (
-                  <button onClick={() => setSelectedTags([])} className="px-3 py-1 rounded-full text-sm bg-red-100 text-red-700">
+                  <button onClick={() => setSelectedTags([])} className="px-3 py-1 text-sm italic text-wine hover:text-wine-dark">
                     Clear all
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                <Trophy className="w-8 h-8 text-yellow-500" />
-                NYC's Best {cat.label}
-              </h2>
+            <div className={panel}>
+              <div className={eyebrow}>The leaderboard</div>
+              <h2 className="font-display text-3xl text-ink mt-1 mb-5">NYC's Best {cat.label}</h2>
 
               {filteredLeaderboard.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-6xl mb-4">🏆</div>
-                  <p>{selectedTags.length > 0 ? `No ${cat.plural} match your filters` : 'No submissions yet. Be the first to rank!'}</p>
+                <div className="text-center py-16 border border-dashed border-line rounded-sm text-ink-muted">
+                  <p className="font-display italic text-xl">{selectedTags.length > 0 ? `No ${cat.plural} match your filters` : 'No submissions yet. Be the first to rank!'}</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-line border-y border-line">
                   {filteredLeaderboard.map((burger, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg overflow-hidden">
-                      <div className="flex items-center gap-4 p-4 hover:bg-gray-100">
-                        <div className="w-12 h-12 flex items-center justify-center flex-shrink-0">
-                          {index === 0 && <span className="text-4xl">🥇</span>}
-                          {index === 1 && <span className="text-4xl">🥈</span>}
-                          {index === 2 && <span className="text-4xl">🥉</span>}
-                          {index > 2 && (
-                            <div className="w-10 h-10 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center font-bold">
-                              {index + 1}
-                            </div>
-                          )}
-                        </div>
+                    <div key={index} className="flex items-center gap-4 py-4 px-2 hover:bg-paper/60">
+                      <div className={`w-12 flex-shrink-0 text-center font-display italic leading-none ${
+                        index < 3 ? 'text-5xl text-brass' : 'text-3xl text-ink-muted'
+                      }`}>
+                        {index + 1}
+                      </div>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-gray-800 text-lg">{burger.name}</div>
-                          <div className="text-sm text-gray-600 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {burger.address}
-                          </div>
-                          {burger.tags?.length > 0 && (
-                            <div className="flex gap-1 mt-1">
-                              {burger.tags.slice(0, 3).map((tag, i) => (
-                                <span key={i} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{tag}</span>
-                              ))}
-                            </div>
-                          )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-display text-xl text-ink">{burger.name}</div>
+                        <div className="text-sm text-ink-muted flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {burger.address}
                         </div>
+                        {burger.tags?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {burger.tags.slice(0, 3).map((tag, i) => (
+                              <span key={i} className={chip}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                        <div className="text-right flex-shrink-0">
-                          <div className="flex items-center gap-1 justify-end mb-1">
-                            <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                            <span className="font-bold text-lg">{burger.avgRating}</span>
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {burger.submissions} {burger.submissions === 1 ? 'vote' : 'votes'}
-                          </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="flex items-center gap-1 justify-end">
+                          <Star className="w-4 h-4 fill-brass text-brass" />
+                          <span className="font-display text-xl text-ink">{burger.avgRating}</span>
+                        </div>
+                        <div className="text-xs uppercase tracking-wider text-ink-muted">
+                          {burger.submissions} {burger.submissions === 1 ? 'vote' : 'votes'}
                         </div>
                       </div>
                     </div>
@@ -1044,41 +1032,35 @@ export default function NYCBurgerRanker() {
         )}
 
         {view === 'following' && (
-          <div>
+          <div className="grid gap-6 lg:gap-8 lg:grid-cols-2 items-start">
             {/* Search Users */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Discover Users</h3>
+            <div className={panel}>
+              <h3 className={`${heading} mb-4`}>Discover Users</h3>
               <div className="relative mb-4">
-                <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                <Search className="absolute left-3 top-3.5 text-ink-muted w-4 h-4" />
                 <input
                   type="text"
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
                   placeholder="Search for users..."
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  className={`${input} pl-9`}
                 />
               </div>
-              
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+
+              <div className="divide-y divide-line border-y border-line max-h-96 overflow-y-auto">
                 {filteredUsers.slice(0, 10).map((user) => (
-                  <div key={user.userId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
+                  <div key={user.userId} className="flex items-center justify-between py-3 px-2 hover:bg-paper/60">
                     <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
-                      <div className="font-medium text-gray-800">@{user.username}</div>
-                      <div className="text-xs text-gray-600">{user.rankingCount} spots ranked</div>
+                      <div className="font-semibold text-ink">@{user.username}</div>
+                      <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
                     </div>
                     {following.includes(user.userId) ? (
-                      <button
-                        onClick={() => unfollowUser(user.userId)}
-                        className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300"
-                      >
+                      <button onClick={() => unfollowUser(user.userId)} className={`${quietButton} px-4 py-2`}>
                         Following
                       </button>
                     ) : (
-                      <button
-                        onClick={() => followUser(user.userId)}
-                        className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600 flex items-center gap-1"
-                      >
-                        <UserPlus className="w-4 h-4" />
+                      <button onClick={() => followUser(user.userId)} className={`${primaryButton} px-4 py-2 flex items-center gap-1`}>
+                        <UserPlus className="w-3.5 h-3.5" />
                         Follow
                       </button>
                     )}
@@ -1088,26 +1070,23 @@ export default function NYCBurgerRanker() {
             </div>
 
             {/* Following List */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">People You Follow ({following.length})</h3>
+            <div className={panel}>
+              <h3 className={`${heading} mb-4`}>People You Follow ({following.length})</h3>
               {followingUsers.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                  <p>You're not following anyone yet</p>
-                  <p className="text-sm mt-2">Search for users above to start following!</p>
+                <div className="text-center py-12 border border-dashed border-line rounded-sm text-ink-muted">
+                  <Users className="w-8 h-8 mx-auto mb-3 text-line" />
+                  <p className="font-display italic text-lg text-ink-soft">You're not following anyone yet</p>
+                  <p className="text-sm mt-1">Search for users to start following.</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="divide-y divide-line border-y border-line">
                   {followingUsers.map((user) => (
-                    <div key={user.userId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
+                    <div key={user.userId} className="flex items-center justify-between py-3 px-2 hover:bg-paper/60">
                       <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
-                        <div className="font-medium text-gray-800">@{user.username}</div>
-                        <div className="text-xs text-gray-600">{user.rankingCount} spots ranked</div>
+                        <div className="font-semibold text-ink">@{user.username}</div>
+                        <div className="text-xs text-ink-muted">{user.rankingCount} spots ranked</div>
                       </div>
-                      <button
-                        onClick={() => viewUserProfile(user.userId)}
-                        className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600"
-                      >
+                      <button onClick={() => viewUserProfile(user.userId)} className={`${quietButton} px-4 py-2`}>
                         View Profile
                       </button>
                     </div>
@@ -1119,75 +1098,66 @@ export default function NYCBurgerRanker() {
         )}
 
         {view === 'profile' && selectedUserProfile && (
-          <div>
+          <div className="max-w-3xl mx-auto">
             <button
               onClick={() => setView('following')}
-              className="mb-4 text-orange-600 hover:text-orange-700 flex items-center gap-1"
+              className="mb-4 text-sm italic text-wine hover:text-wine-dark"
             >
               ← Back to Following
             </button>
-            
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+
+            <div className={panel}>
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-800">@{selectedUserProfile.username}</h2>
-                  <p className="text-sm text-gray-600">{countRanked(selectedUserProfile.rankings)} spots ranked</p>
+                  <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
+                  <p className="text-sm text-ink-muted">{countRanked(selectedUserProfile.rankings)} spots ranked</p>
                 </div>
                 {following.includes(selectedUserProfile.userId) ? (
-                  <button
-                    onClick={() => unfollowUser(selectedUserProfile.userId)}
-                    className="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-300"
-                  >
+                  <button onClick={() => unfollowUser(selectedUserProfile.userId)} className={`${quietButton} px-6 py-3`}>
                     Following
                   </button>
                 ) : (
-                  <button
-                    onClick={() => followUser(selectedUserProfile.userId)}
-                    className="bg-orange-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-orange-600 flex items-center gap-2"
-                  >
-                    <UserPlus className="w-5 h-5" />
+                  <button onClick={() => followUser(selectedUserProfile.userId)} className={`${primaryButton} px-6 py-3 flex items-center gap-2`}>
+                    <UserPlus className="w-4 h-4" />
                     Follow
                   </button>
                 )}
               </div>
 
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Their Top {cat.label}</h3>
+              <div className={eyebrow}>Their picks</div>
+              <h3 className={`${heading} mt-1 mb-4`}>Their Top {cat.label}</h3>
               {selectedUserProfile.rankings[category].length === 0 ? (
-                <p className="text-gray-500 text-center py-8">This user hasn't ranked any {cat.plural} yet</p>
+                <p className="font-display italic text-ink-muted text-center py-8">This user hasn't ranked any {cat.plural} yet</p>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-line border-y border-line">
                   {selectedUserProfile.rankings[category].map((burger, index) => (
-                    <div key={index} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">
-                          {index + 1}
+                    <div key={index} className="flex items-start gap-4 py-4 px-2">
+                      <div className="w-10 flex-shrink-0 text-center font-display italic text-4xl leading-none text-wine">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-display text-xl text-ink">{burger.name}</div>
+                        <div className="text-sm text-ink-muted flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {burger.address}
                         </div>
-                        <div className="flex-1">
-                          <div className="font-bold text-gray-800 text-lg">{burger.name}</div>
-                          <div className="text-sm text-gray-600 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {burger.address}
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="flex gap-1">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star key={star} className={`w-5 h-5 ${star <= burger.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />
-                              ))}
-                            </div>
-                          </div>
-                          {burger.comments && (
-                            <div className="mt-2 text-sm text-gray-700 italic bg-white p-3 rounded border-l-2 border-orange-500">
-                              "{burger.comments}"
-                            </div>
-                          )}
-                          {burger.tags?.length > 0 && (
-                            <div className="flex gap-1 mt-2">
-                              {burger.tags.map((tag, i) => (
-                                <span key={i} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{tag}</span>
-                              ))}
-                            </div>
-                          )}
+                        <div className="flex gap-0.5 mt-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star key={star} className={`w-4 h-4 ${star <= burger.rating ? 'fill-brass text-brass' : 'text-line'}`} />
+                          ))}
                         </div>
+                        {burger.comments && (
+                          <div className="mt-2 font-display italic text-ink-soft pl-3 border-l-2 border-brass">
+                            "{burger.comments}"
+                          </div>
+                        )}
+                        {burger.tags?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {burger.tags.map((tag, i) => (
+                              <span key={i} className={chip}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1197,9 +1167,14 @@ export default function NYCBurgerRanker() {
           </div>
         )}
 
-        <div className="mt-8 text-center text-sm text-gray-500 pb-8">
-          <p>{cat.emoji} Share your {cat.singular} rankings with friends!</p>
-        </div>
+        <footer className="mt-12 text-center pb-10">
+          <div className="flex items-center justify-center gap-3 mb-3" aria-hidden="true">
+            <span className="h-px w-10 bg-line" />
+            <span className="text-brass text-[10px]">◆</span>
+            <span className="h-px w-10 bg-line" />
+          </div>
+          <p className="font-display italic text-ink-muted">Share your {cat.singular} rankings with friends</p>
+        </footer>
       </div>
     </div>
   );
