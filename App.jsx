@@ -118,6 +118,8 @@ export default function NYCBurgerRanker() {
   const [aiSearchQuery, setAiSearchQuery] = useState('');
   const [aiSearchResults, setAiSearchResults] = useState([]);
   const [aiSearchMessage, setAiSearchMessage] = useState('');
+  // Bumped on each search and on close, so a late answer can't reopen closed results.
+  const aiSearchIdRef = useRef(0);
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [showRecommended, setShowRecommended] = useState(true);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -376,6 +378,14 @@ export default function NYCBurgerRanker() {
     }
   };
 
+  const clearAiSearch = () => {
+    aiSearchIdRef.current += 1;
+    setIsAiSearching(false);
+    setAiSearchQuery('');
+    setAiSearchResults([]);
+    setAiSearchMessage('');
+  };
+
   const handleAiSearch = async () => {
     if (!aiSearchQuery.trim()) return;
     setAiSearchResults([]);
@@ -385,6 +395,7 @@ export default function NYCBurgerRanker() {
       return;
     }
     setIsAiSearching(true);
+    const searchId = ++aiSearchIdRef.current;
 
     try {
       const response = await fetch(AI_SEARCH_URL, {
@@ -393,6 +404,7 @@ export default function NYCBurgerRanker() {
         body: JSON.stringify({ query: aiSearchQuery }),
       });
       const data = await response.json().catch(() => ({}));
+      if (searchId !== aiSearchIdRef.current) return;
       if (!response.ok) throw new Error(data.error || `AI search failed (${response.status})`);
       const results = (data.results || []).map(r => ({
         ...r,
@@ -402,6 +414,7 @@ export default function NYCBurgerRanker() {
       setAiSearchResults(results);
       if (results.length === 0) setAiSearchMessage('No matches for that one. Try describing it another way.');
     } catch (error) {
+      if (searchId !== aiSearchIdRef.current) return;
       console.error('AI search error:', error);
       setAiSearchMessage(`${error.message}. Try the search bar or browse recommended spots below.`);
     }
@@ -714,14 +727,24 @@ export default function NYCBurgerRanker() {
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="w-4 h-4 text-vert" />
                 <h3 className="font-display text-xl text-vert">Ask the maître d'</h3>
+                {(aiSearchResults.length > 0 || aiSearchMessage) && (
+                  <button
+                    onClick={clearAiSearch}
+                    className="ml-auto shrink-0 text-xs uppercase tracking-wider text-vert hover:text-vert-dark flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Close
+                  </button>
+                )}
               </div>
               <p className="text-sm italic text-ink-soft mb-3">Describe what you're after, for burgers, martinis or pizza anywhere in the city.</p>
               <div className="flex gap-2 mb-3">
                 <input
                   type="text"
                   value={aiSearchQuery}
-                  onChange={(e) => setAiSearchQuery(e.target.value)}
+                  onChange={(e) => (e.target.value ? setAiSearchQuery(e.target.value) : clearAiSearch())}
                   onKeyPress={(e) => e.key === 'Enter' && handleAiSearch()}
+                  onKeyDown={(e) => e.key === 'Escape' && clearAiSearch()}
                   placeholder={cat.aiPlaceholder}
                   maxLength={300}
                   className={`${input} focus:ring-vert focus:border-vert`}
