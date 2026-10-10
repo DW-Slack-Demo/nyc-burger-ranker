@@ -81,6 +81,16 @@ const CATEGORIES = {
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES);
 
+// The AI Finder calls a small server (ai-search/) that holds the Anthropic API key,
+// since a key in this static site would be visible to anyone.
+const AI_SEARCH_URL = import.meta.env.VITE_AI_SEARCH_URL;
+
+// Reuse a recommended spot's id when the AI suggests it, so leaderboard votes add up.
+const placeIdFor = (name, key) => {
+  const known = CATEGORIES[key]?.recommended.find(r => r.name.toLowerCase() === name.toLowerCase());
+  return known ? known.place_id : `ai-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+};
+
 // Users saved before categories existed only have a top-level `ranking` (burgers).
 const normalizeRankings = (data) => {
   const rankings = { ...(data?.rankings || {}) };
@@ -105,7 +115,8 @@ export default function NYCBurgerRanker() {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedComments, setExpandedComments] = useState({});
   const [aiSearchQuery, setAiSearchQuery] = useState('');
-  const [aiSearchResults, setAiSearchResults] = useState('');
+  const [aiSearchResults, setAiSearchResults] = useState([]);
+  const [aiSearchMessage, setAiSearchMessage] = useState('');
   const [isAiSearching, setIsAiSearching] = useState(false);
   const [showRecommended, setShowRecommended] = useState(true);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -133,7 +144,6 @@ export default function NYCBurgerRanker() {
     setCategory(key);
     setSearchResults([]);
     setSearchQuery('');
-    setAiSearchResults('');
     setSelectedTags([]);
     setDraggedIndex(null);
     setDragSource(null);
@@ -367,28 +377,32 @@ export default function NYCBurgerRanker() {
 
   const handleAiSearch = async () => {
     if (!aiSearchQuery.trim()) return;
+    setAiSearchResults([]);
+    setAiSearchMessage('');
+    if (!AI_SEARCH_URL) {
+      setAiSearchMessage("AI search isn't switched on for this site yet. Use the search bar or the recommended spots below.");
+      return;
+    }
     setIsAiSearching(true);
-    setAiSearchResults('');
-    
+
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch(AI_SEARCH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `You are a NYC ${cat.singular} expert. Based on this request: "${aiSearchQuery}", recommend 2-3 specific ${cat.singular} spots in NYC with their neighborhoods. Be concise. Format: Restaurant Name (Neighborhood) - brief reason why.`
-          }],
-        }),
+        body: JSON.stringify({ query: aiSearchQuery }),
       });
-
-      const data = await response.json();
-      const textContent = data.content.filter(block => block.type === 'text').map(block => block.text).join('\n');
-      setAiSearchResults(textContent);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `AI search failed (${response.status})`);
+      const results = (data.results || []).map(r => ({
+        ...r,
+        place_id: placeIdFor(r.name, r.category),
+        address: r.address || r.neighborhood || 'New York, NY',
+      }));
+      setAiSearchResults(results);
+      if (results.length === 0) setAiSearchMessage('No matches for that one. Try describing it another way.');
     } catch (error) {
-      setAiSearchResults('Could not get recommendations. Try the search bar or browse recommended spots below.');
+      console.error('AI search error:', error);
+      setAiSearchMessage(`${error.message}. Try the search bar or browse recommended spots below.`);
     }
     setIsAiSearching(false);
   };
@@ -410,24 +424,32 @@ export default function NYCBurgerRanker() {
     setIsSearching(false);
   };
 
-  const addBurger = (place) => {
-    if (rankedItems.length >= 10) {
-      alert(`You can only rank 10 ${cat.plural}!`);
-      return;
+  // Adds a spot to one of the lists (the open one unless another is named).
+  const addToList = (place, key = category) => {
+    const list = rankings[key];
+    const target = CATEGORIES[key];
+    if (list.length >= 10) {
+      alert(`You can only rank 10 ${target.plural}!`);
+      return false;
     }
-    if (rankedItems.some(b => b.place_id === place.place_id)) {
-      alert(`This ${cat.singular} is already in your ranking!`);
-      return;
+    if (list.some(b => b.place_id === place.place_id)) {
+      alert(`This ${target.singular} is already in your ranking!`);
+      return false;
     }
 
-    setRankedItems([...rankedItems, {
+    setRankings(prev => ({ ...prev, [key]: [...prev[key], {
       place_id: place.place_id,
       name: place.name,
       address: place.address,
       rating: 5,
       comments: '',
       tags: place.tags || [],
-    }]);
+    }] }));
+    return true;
+  };
+
+  const addBurger = (place) => {
+    if (!addToList(place)) return;
     setSearchResults([]);
     setSearchQuery('');
   };
@@ -675,10 +697,11 @@ export default function NYCBurgerRanker() {
 
             {/* AI Search */}
             <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg shadow-sm p-6 mb-6 border-2 border-purple-200">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="w-5 h-5 text-purple-600" />
-                <h3 className="text-lg font-bold text-gray-800">AI {cat.label} Finder</h3>
+                <h3 className="text-lg font-bold text-gray-800">AI Finder</h3>
               </div>
+              <p className="text-sm text-gray-600 mb-3">Describe what you're after, for burgers, martinis or pizza anywhere in the city.</p>
               <div className="flex gap-2 mb-3">
                 <input
                   type="text"
@@ -686,6 +709,7 @@ export default function NYCBurgerRanker() {
                   onChange={(e) => setAiSearchQuery(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleAiSearch()}
                   placeholder={cat.aiPlaceholder}
+                  maxLength={300}
                   className="flex-1 px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 />
                 <button
@@ -697,9 +721,37 @@ export default function NYCBurgerRanker() {
                   {isAiSearching ? 'Thinking...' : 'Ask AI'}
                 </button>
               </div>
-              {aiSearchResults && (
+              {aiSearchMessage && (
                 <div className="bg-white p-4 rounded-lg border border-purple-200">
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{aiSearchResults}</p>
+                  <p className="text-sm text-gray-700">{aiSearchMessage}</p>
+                </div>
+              )}
+              {aiSearchResults.length > 0 && (
+                <div className="space-y-2">
+                  {aiSearchResults.map((place) => {
+                    const target = CATEGORIES[place.category];
+                    return (
+                      <div key={place.place_id} className="bg-white p-4 rounded-lg border border-purple-200 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            {target ? `${target.emoji} ` : ''}{place.name}
+                            <span className="font-normal text-gray-500"> · {place.neighborhood}</span>
+                          </p>
+                          <p className="text-sm text-gray-700">{place.why}</p>
+                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" />{place.address}</p>
+                        </div>
+                        {target && (
+                          <button
+                            onClick={() => addToList(place, place.category)}
+                            className="shrink-0 text-sm bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 flex items-center gap-1"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add to {target.label}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
