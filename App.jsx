@@ -11,16 +11,102 @@ const FIREBASE_CONFIG = {
   appId: "1:148456854796:web:a750700ca0b7eb65d1a529"
 };
 
+const CATEGORIES = {
+  burgers: {
+    label: 'Burgers',
+    emoji: '🍔',
+    singular: 'burger',
+    plural: 'burgers',
+    recommendedTitle: 'Recommended by Eater & Timeout',
+    searchPlaceholder: 'Search for burger spots in NYC...',
+    aiPlaceholder: "E.g., I'm in the West Village, find me a burger spot",
+    commentPlaceholder: 'What makes this burger special?',
+    recommended: [
+      { name: "Raoul's", address: "180 Prince St, NY 10012", place_id: "raouls", source: "Eater", tags: ["Classic", "Upscale"] },
+      { name: "J.G. Melon", address: "1291 3rd Ave, NY 10021", place_id: "jgmelon", source: "Timeout", tags: ["Classic", "No-frills"] },
+      { name: "Corner Bistro", address: "331 W 4th St, NY 10014", place_id: "corner", source: "Eater", tags: ["Classic", "Dive Bar"] },
+      { name: "Shake Shack", address: "Multiple Locations", place_id: "shakeshack", source: "Timeout", tags: ["Chain", "Fast Casual"] },
+      { name: "Superiority Burger", address: "119 Avenue A, NY 10009", place_id: "superiority", source: "Eater", tags: ["Vegetarian"] },
+      { name: "Emily", address: "Multiple Locations", place_id: "emily", source: "Eater", tags: ["Upscale"] },
+      { name: "Minetta Tavern", address: "113 MacDougal St, NY 10012", place_id: "minetta", source: "Eater", tags: ["Upscale", "Classic"] },
+      { name: "Burger Joint", address: "119 W 56th St, NY 10019", place_id: "burgerjoint", source: "Timeout", tags: ["Hidden Gem"] },
+      { name: "Peter Luger", address: "178 Broadway, Brooklyn", place_id: "luger", source: "Eater", tags: ["Steakhouse"] },
+      { name: "Black Tap", address: "Multiple Locations", place_id: "blacktap", source: "Timeout", tags: ["Instagrammable"] },
+      { name: "Flip Sigi", address: "324 E 11th St, NY 10003", place_id: "flipsigi", source: "Eater", tags: ["Smash Burger"] },
+    ],
+    tags: ["Classic", "Upscale", "Vegetarian", "Smash Burger", "Fast Casual", "Gastropub", "Dive Bar", "Hidden Gem", "Steakhouse", "Chain", "No-frills", "Instagrammable"],
+  },
+  martinis: {
+    label: 'Martinis',
+    emoji: '🍸',
+    singular: 'martini',
+    plural: 'martinis',
+    recommendedTitle: 'Popular Martini Spots',
+    searchPlaceholder: 'Search for martini bars in NYC...',
+    aiPlaceholder: "E.g., Somewhere classy near Grand Central for a dirty martini",
+    commentPlaceholder: 'What makes this martini special?',
+    recommended: [
+      { name: "Bemelmans Bar", address: "35 E 76th St, NY 10021", place_id: "bemelmans", tags: ["Hotel Bar", "Classic"] },
+      { name: "King Cole Bar", address: "2 E 55th St, NY 10022", place_id: "kingcole", tags: ["Hotel Bar", "Upscale"] },
+      { name: "Dante", address: "79-81 MacDougal St, NY 10012", place_id: "dante", tags: ["Classic", "Happy Hour"] },
+      { name: "The Campbell", address: "15 Vanderbilt Ave, NY 10017", place_id: "campbell", tags: ["Upscale", "Hidden Gem"] },
+      { name: "Temple Bar", address: "332 Lafayette St, NY 10012", place_id: "templebar", tags: ["Classic", "Speakeasy"] },
+      { name: "Keens Steakhouse", address: "72 W 36th St, NY 10018", place_id: "keens", tags: ["Steakhouse", "Classic"] },
+      { name: "Employees Only", address: "510 Hudson St, NY 10014", place_id: "employeesonly", tags: ["Speakeasy"] },
+      { name: "Gage & Tollner", address: "372 Fulton St, Brooklyn", place_id: "gagetollner", tags: ["Classic", "Upscale"] },
+      { name: "Dear Irving", address: "55 Irving Pl, NY 10003", place_id: "dearirving", tags: ["Speakeasy", "Instagrammable"] },
+    ],
+    tags: ["Classic", "Dirty", "Gin", "Vodka", "Hotel Bar", "Speakeasy", "Steakhouse", "Upscale", "Dive Bar", "Hidden Gem", "Happy Hour", "Instagrammable"],
+  },
+  pizza: {
+    label: 'Pizza',
+    emoji: '🍕',
+    singular: 'pizza',
+    plural: 'pizzas',
+    recommendedTitle: 'Popular Pizza Spots',
+    searchPlaceholder: 'Search for pizza places in NYC...',
+    aiPlaceholder: "E.g., Best late-night slice in the East Village",
+    commentPlaceholder: 'What makes this pizza special?',
+    recommended: [
+      { name: "Lucali", address: "575 Henry St, Brooklyn", place_id: "lucali", tags: ["Whole Pie", "Cash Only"] },
+      { name: "Di Fara", address: "1424 Avenue J, Brooklyn", place_id: "difara", tags: ["Classic", "Slice"] },
+      { name: "Joe's Pizza", address: "7 Carmine St, NY 10014", place_id: "joes", tags: ["Slice", "New York Style"] },
+      { name: "Prince Street Pizza", address: "27 Prince St, NY 10012", place_id: "princestreet", tags: ["Sicilian", "Slice"] },
+      { name: "L'Industrie", address: "Multiple Locations", place_id: "lindustrie", tags: ["Slice"] },
+      { name: "John's of Bleecker Street", address: "278 Bleecker St, NY 10014", place_id: "johns", tags: ["Coal Oven", "Whole Pie"] },
+      { name: "Lombardi's", address: "32 Spring St, NY 10012", place_id: "lombardis", tags: ["Coal Oven", "Classic"] },
+      { name: "Scarr's Pizza", address: "35 Orchard St, NY 10002", place_id: "scarrs", tags: ["Slice", "New York Style"] },
+      { name: "Una Pizza Napoletana", address: "175 Orchard St, NY 10002", place_id: "unapizza", tags: ["Neapolitan", "Wood-Fired"] },
+      { name: "Totonno's", address: "1524 Neptune Ave, Brooklyn", place_id: "totonnos", tags: ["Coal Oven", "Classic"] },
+      { name: "Joe & Pat's", address: "1758 Victory Blvd, Staten Island", place_id: "joeandpats", tags: ["Whole Pie", "Classic"] },
+    ],
+    tags: ["Slice", "Whole Pie", "New York Style", "Neapolitan", "Sicilian", "Grandma", "Coal Oven", "Wood-Fired", "Classic", "Hidden Gem", "Cash Only", "Late Night"],
+  },
+};
+
+const CATEGORY_KEYS = Object.keys(CATEGORIES);
+
+// Users saved before categories existed only have a top-level `ranking` (burgers).
+const normalizeRankings = (data) => {
+  const rankings = { ...(data?.rankings || {}) };
+  if (!rankings.burgers && data?.ranking) rankings.burgers = data.ranking;
+  CATEGORY_KEYS.forEach((key) => { rankings[key] = rankings[key] || []; });
+  return rankings;
+};
+
+const countRanked = (rankings) => CATEGORY_KEYS.reduce((sum, key) => sum + rankings[key].length, 0);
+
 export default function NYCBurgerRanker() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [rankedBurgers, setRankedBurgers] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [category, setCategory] = useState('burgers');
+  const [rankings, setRankings] = useState(() => normalizeRankings(null));
+  const [leaderboards, setLeaderboards] = useState(() => normalizeRankings(null));
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragSource, setDragSource] = useState(null);
   const [view, setView] = useState('ranking'); // 'ranking', 'leaderboard', 'following', 'profile'
-  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [expandedComments, setExpandedComments] = useState({});
   const [aiSearchQuery, setAiSearchQuery] = useState('');
@@ -41,21 +127,20 @@ export default function NYCBurgerRanker() {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
 
-  const recommendedBurgers = [
-    { name: "Raoul's", address: "180 Prince St, NY 10012", place_id: "raouls", source: "Eater", tags: ["Classic", "Upscale"] },
-    { name: "J.G. Melon", address: "1291 3rd Ave, NY 10021", place_id: "jgmelon", source: "Timeout", tags: ["Classic", "No-frills"] },
-    { name: "Corner Bistro", address: "331 W 4th St, NY 10014", place_id: "corner", source: "Eater", tags: ["Classic", "Dive Bar"] },
-    { name: "Shake Shack", address: "Multiple Locations", place_id: "shakeshack", source: "Timeout", tags: ["Chain", "Fast Casual"] },
-    { name: "Superiority Burger", address: "119 Avenue A, NY 10009", place_id: "superiority", source: "Eater", tags: ["Vegetarian"] },
-    { name: "Emily", address: "Multiple Locations", place_id: "emily", source: "Eater", tags: ["Upscale"] },
-    { name: "Minetta Tavern", address: "113 MacDougal St, NY 10012", place_id: "minetta", source: "Eater", tags: ["Upscale", "Classic"] },
-    { name: "Burger Joint", address: "119 W 56th St, NY 10019", place_id: "burgerjoint", source: "Timeout", tags: ["Hidden Gem"] },
-    { name: "Peter Luger", address: "178 Broadway, Brooklyn", place_id: "luger", source: "Eater", tags: ["Steakhouse"] },
-    { name: "Black Tap", address: "Multiple Locations", place_id: "blacktap", source: "Timeout", tags: ["Instagrammable"] },
-    { name: "Flip Sigi", address: "324 E 11th St, NY 10003", place_id: "flipsigi", source: "Eater", tags: ["Smash Burger"] },
-  ];
+  const cat = CATEGORIES[category];
+  const rankedItems = rankings[category];
+  const setRankedItems = (items) => setRankings(prev => ({ ...prev, [category]: items }));
+  const leaderboard = leaderboards[category];
 
-  const allTags = ["Classic", "Upscale", "Vegetarian", "Smash Burger", "Fast Casual", "Gastropub", "Dive Bar", "Hidden Gem", "Steakhouse", "Chain", "No-frills", "Instagrammable"];
+  const switchCategory = (key) => {
+    setCategory(key);
+    setSearchResults([]);
+    setSearchQuery('');
+    setAiSearchResults('');
+    setSelectedTags([]);
+    setDraggedIndex(null);
+    setDragSource(null);
+  };
 
   useEffect(() => {
     const initFirebase = async () => {
@@ -94,7 +179,7 @@ export default function NYCBurgerRanker() {
       const userDoc = await getDoc(userDocRef);
       if (userDoc.exists()) {
         const data = userDoc.data();
-        setRankedBurgers(data.ranking || []);
+        setRankings(normalizeRankings(data));
         if (data.username) {
           setUsername(data.username);
           setHasUsername(true);
@@ -128,7 +213,7 @@ export default function NYCBurgerRanker() {
           users.push({
             userId: doc.id,
             username: data.username,
-            rankingCount: data.ranking?.length || 0,
+            rankingCount: countRanked(normalizeRankings(data)),
             updatedAt: data.updatedAt,
           });
         }
@@ -203,6 +288,7 @@ export default function NYCBurgerRanker() {
       await setDoc(userDocRef, {
         username: tempUsername.trim(),
         ranking: [],
+        rankings: {},
         following: [],
         updatedAt: new Date().toISOString(),
       }, { merge: true });
@@ -268,7 +354,7 @@ export default function NYCBurgerRanker() {
         setSelectedUserProfile({
           userId: targetUserId,
           username: data.username,
-          ranking: data.ranking || [],
+          rankings: normalizeRankings(data),
           updatedAt: data.updatedAt,
         });
         setView('profile');
@@ -285,10 +371,14 @@ export default function NYCBurgerRanker() {
       const submissionsRef = collection(firestore, 'submissions');
       const snapshot = await getDocs(submissionsRef);
       
-      const burgerScores = {};
+      const scoresByCategory = {};
+      CATEGORY_KEYS.forEach((key) => { scoresByCategory[key] = {}; });
       snapshot.forEach((doc) => {
         const submission = doc.data();
-        submission.burgers?.forEach((burger, index) => {
+        // Submissions saved before categories existed are burger rankings.
+        const burgerScores = scoresByCategory[submission.category || 'burgers'];
+        if (!burgerScores) return;
+        (submission.items || submission.burgers)?.forEach((burger, index) => {
           const placeId = burger.place_id || burger.name;
           if (!burgerScores[placeId]) {
             burgerScores[placeId] = {
@@ -314,15 +404,18 @@ export default function NYCBurgerRanker() {
         });
       });
 
-      const leaderboardData = Object.values(burgerScores)
-        .map((burger) => ({
-          ...burger,
-          avgRating: (burger.totalRatings / burger.submissions).toFixed(1),
-        }))
-        .sort((a, b) => b.totalPoints - a.totalPoints)
-        .slice(0, 20);
+      const leaderboardData = {};
+      CATEGORY_KEYS.forEach((key) => {
+        leaderboardData[key] = Object.values(scoresByCategory[key])
+          .map((burger) => ({
+            ...burger,
+            avgRating: (burger.totalRatings / burger.submissions).toFixed(1),
+          }))
+          .sort((a, b) => b.totalPoints - a.totalPoints)
+          .slice(0, 20);
+      });
 
-      setLeaderboard(leaderboardData);
+      setLeaderboards(leaderboardData);
     } catch (error) {
       console.error('Error updating leaderboard:', error);
     }
@@ -342,7 +435,7 @@ export default function NYCBurgerRanker() {
           max_tokens: 1000,
           messages: [{
             role: 'user',
-            content: `You are a NYC burger expert. Based on this request: "${aiSearchQuery}", recommend 2-3 specific burger spots in NYC with their neighborhoods. Be concise. Format: Restaurant Name (Neighborhood) - brief reason why.`
+            content: `You are a NYC ${cat.singular} expert. Based on this request: "${aiSearchQuery}", recommend 2-3 specific ${cat.singular} spots in NYC with their neighborhoods. Be concise. Format: Restaurant Name (Neighborhood) - brief reason why.`
           }],
         }),
       });
@@ -360,7 +453,7 @@ export default function NYCBurgerRanker() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     
-    const allBurgers = [...recommendedBurgers];
+    const allBurgers = [...cat.recommended];
     const lowerQuery = searchQuery.toLowerCase();
     const filtered = allBurgers.filter(b => 
       b.name.toLowerCase().includes(lowerQuery) || 
@@ -374,16 +467,16 @@ export default function NYCBurgerRanker() {
   };
 
   const addBurger = (place) => {
-    if (rankedBurgers.length >= 10) {
-      alert('You can only rank 10 burgers!');
+    if (rankedItems.length >= 10) {
+      alert(`You can only rank 10 ${cat.plural}!`);
       return;
     }
-    if (rankedBurgers.some(b => b.place_id === place.place_id)) {
-      alert('This burger is already in your ranking!');
+    if (rankedItems.some(b => b.place_id === place.place_id)) {
+      alert(`This ${cat.singular} is already in your ranking!`);
       return;
     }
 
-    setRankedBurgers([...rankedBurgers, {
+    setRankedItems([...rankedItems, {
       place_id: place.place_id,
       name: place.name,
       address: place.address,
@@ -396,13 +489,13 @@ export default function NYCBurgerRanker() {
   };
 
   const removeBurger = (index) => {
-    setRankedBurgers(rankedBurgers.filter((_, i) => i !== index));
+    setRankedItems(rankedItems.filter((_, i) => i !== index));
   };
 
   const updateBurger = (index, field, value) => {
-    const updated = [...rankedBurgers];
+    const updated = [...rankedItems];
     updated[index][field] = value;
-    setRankedBurgers(updated);
+    setRankedItems(updated);
   };
 
   const handleDragStart = (index, source = 'ranked') => {
@@ -413,11 +506,11 @@ export default function NYCBurgerRanker() {
   const handleDragOver = (e, index) => {
     e.preventDefault();
     if (dragSource !== 'ranked' || draggedIndex === null || draggedIndex === index) return;
-    const items = [...rankedBurgers];
+    const items = [...rankedItems];
     const draggedItem = items[draggedIndex];
     items.splice(draggedIndex, 1);
     items.splice(index, 0, draggedItem);
-    setRankedBurgers(items);
+    setRankedItems(items);
     setDraggedIndex(index);
   };
 
@@ -430,27 +523,27 @@ export default function NYCBurgerRanker() {
     e.preventDefault();
     if (dragSource !== 'recommended' || draggedIndex === null) return;
 
-    const burger = recommendedBurgers[draggedIndex];
-    if (rankedBurgers.length >= 10) {
-      alert('You can only rank 10 burgers!');
+    const burger = cat.recommended[draggedIndex];
+    if (rankedItems.length >= 10) {
+      alert(`You can only rank 10 ${cat.plural}!`);
       handleDragEnd();
       return;
     }
-    if (rankedBurgers.some(b => b.place_id === burger.place_id)) {
-      alert('This burger is already in your ranking!');
+    if (rankedItems.some(b => b.place_id === burger.place_id)) {
+      alert(`This ${cat.singular} is already in your ranking!`);
       handleDragEnd();
       return;
     }
 
-    const items = [...rankedBurgers];
+    const items = [...rankedItems];
     items.splice(targetIndex, 0, { ...burger, rating: 5, comments: '' });
-    setRankedBurgers(items);
+    setRankedItems(items);
     handleDragEnd();
   };
 
   const saveRanking = async () => {
-    if (rankedBurgers.length === 0) {
-      alert('Please add at least one burger!');
+    if (rankedItems.length === 0) {
+      alert(`Please add at least one ${cat.singular}!`);
       return;
     }
 
@@ -470,7 +563,8 @@ export default function NYCBurgerRanker() {
       const userDocRef = doc(db, 'users', userId);
       await setDoc(userDocRef, {
         username: username,
-        ranking: rankedBurgers,
+        rankings: rankings,
+        ranking: rankings.burgers, // legacy field read by older clients
         following: following,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
@@ -479,11 +573,13 @@ export default function NYCBurgerRanker() {
       await addDoc(submissionsRef, {
         userId: userId,
         username: username,
-        burgers: rankedBurgers,
+        category: category,
+        items: rankedItems,
+        ...(category === 'burgers' && { burgers: rankedItems }), // legacy field
         timestamp: new Date().toISOString(),
       });
 
-      setHasSubmitted(true);
+      setSubmitted(prev => ({ ...prev, [category]: true }));
       await updateLeaderboard(db);
       setTimeout(() => setView('leaderboard'), 1000);
     } catch (error) {
@@ -510,7 +606,7 @@ export default function NYCBurgerRanker() {
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
           <div className="text-center mb-6">
             <div className="text-5xl mb-4">🍔</div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Welcome to NYC Burger Ranker!</h1>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Welcome to NYC Top 10!</h1>
             <p className="text-gray-600">Choose a username to get started</p>
           </div>
           
@@ -542,7 +638,7 @@ export default function NYCBurgerRanker() {
               </button>
               
               <p className="text-xs text-gray-500 text-center">
-                You'll be able to follow other users and see their burger rankings!
+                You'll be able to follow other users and see their burger, martini and pizza rankings!
               </p>
               
               <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -576,8 +672,8 @@ export default function NYCBurgerRanker() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-4">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-6 pt-8">
-          <h1 className="text-5xl font-bold text-gray-800 mb-2">🍔 NYC Burger Ranker</h1>
-          <p className="text-gray-600">Rank your top 10 favorite burgers in New York City</p>
+          <h1 className="text-5xl font-bold text-gray-800 mb-2">🍔🍸🍕 NYC Top 10</h1>
+          <p className="text-gray-600">Rank your top 10 burgers, martinis and pizza in New York City</p>
           <div className="mt-2 flex items-center justify-center gap-2 text-sm">
             <User className="w-4 h-4 text-orange-600" />
             <span className="font-medium text-gray-700">@{username}</span>
@@ -587,6 +683,22 @@ export default function NYCBurgerRanker() {
             <span className="text-gray-600">{followers.length} followers</span>
           </div>
         </div>
+
+        {view !== 'following' && (
+          <div className="flex justify-center gap-2 mb-4">
+            {CATEGORY_KEYS.map((key) => (
+              <button
+                key={key}
+                onClick={() => switchCategory(key)}
+                className={`px-4 py-2 rounded-full font-medium transition-all ${
+                  category === key ? 'bg-gray-800 text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                {CATEGORIES[key].emoji} {CATEGORIES[key].label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-2 mb-6 bg-white rounded-lg p-1 shadow-sm overflow-x-auto">
           <button
@@ -629,7 +741,7 @@ export default function NYCBurgerRanker() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && searchBurgers()}
-                    placeholder="Search for burger spots in NYC..."
+                    placeholder={cat.searchPlaceholder}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
                 </div>
@@ -670,7 +782,7 @@ export default function NYCBurgerRanker() {
             <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg shadow-sm p-6 mb-6 border-2 border-purple-200">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="w-5 h-5 text-purple-600" />
-                <h3 className="text-lg font-bold text-gray-800">AI Burger Finder</h3>
+                <h3 className="text-lg font-bold text-gray-800">AI {cat.label} Finder</h3>
               </div>
               <div className="flex gap-2 mb-3">
                 <input
@@ -678,7 +790,7 @@ export default function NYCBurgerRanker() {
                   value={aiSearchQuery}
                   onChange={(e) => setAiSearchQuery(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleAiSearch()}
-                  placeholder="E.g., I'm in the West Village, find me a burger spot"
+                  placeholder={cat.aiPlaceholder}
                   className="flex-1 px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 />
                 <button
@@ -700,7 +812,7 @@ export default function NYCBurgerRanker() {
             {/* Recommended */}
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-800">🏆 Recommended by Eater & Timeout</h3>
+                <h3 className="text-xl font-bold text-gray-800">🏆 {cat.recommendedTitle}</h3>
                 <button onClick={() => setShowRecommended(!showRecommended)} className="text-sm text-orange-600">
                   {showRecommended ? 'Hide' : 'Show'}
                 </button>
@@ -709,7 +821,7 @@ export default function NYCBurgerRanker() {
                 <div>
                   <p className="text-sm text-gray-600 mb-4">Drag and drop these into your ranking!</p>
                   <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
-                    {recommendedBurgers.map((burger, idx) => (
+                    {cat.recommended.map((burger, idx) => (
                       <div
                         key={idx}
                         draggable
@@ -727,7 +839,9 @@ export default function NYCBurgerRanker() {
                             <div className="font-medium text-gray-800">{burger.name}</div>
                             <div className="text-xs text-gray-600">{burger.address}</div>
                             <div className="flex gap-1 mt-1">
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{burger.source}</span>
+                              {burger.source && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{burger.source}</span>
+                              )}
                               {burger.tags.slice(0, 2).map((tag, i) => (
                                 <span key={i} className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{tag}</span>
                               ))}
@@ -746,21 +860,21 @@ export default function NYCBurgerRanker() {
 
             {/* Ranked List - abbreviated for space */}
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-1">Your Top Burgers</h2>
-              <p className="text-sm text-gray-600 mb-4">{rankedBurgers.length} of 10 burgers ranked</p>
+              <h2 className="text-2xl font-bold text-gray-800 mb-1">Your Top {cat.label}</h2>
+              <p className="text-sm text-gray-600 mb-4">{rankedItems.length} of 10 {cat.plural} ranked</p>
               
-              {rankedBurgers.length === 0 ? (
+              {rankedItems.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
-                  <div className="text-6xl mb-4">🍔</div>
-                  <p>Drag burgers from recommended list or search to add them!</p>
+                  <div className="text-6xl mb-4">{cat.emoji}</div>
+                  <p>Drag {cat.plural} from the recommended list or search to add them!</p>
                 </div>
               ) : (
                 <div 
                   className="space-y-3"
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, rankedBurgers.length)}
+                  onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, rankedItems.length)}
                 >
-                  {rankedBurgers.map((burger, index) => (
+                  {rankedItems.map((burger, index) => (
                     <div
                       key={index}
                       draggable
@@ -820,7 +934,7 @@ export default function NYCBurgerRanker() {
                             <textarea
                               value={burger.comments}
                               onChange={(e) => updateBurger(index, 'comments', e.target.value)}
-                              placeholder="What makes this burger special?"
+                              placeholder={cat.commentPlaceholder}
                               className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
                               rows="2"
                             />
@@ -850,7 +964,7 @@ export default function NYCBurgerRanker() {
                                 className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-600"
                               >
                                 <option value="">+ Add label</option>
-                                {allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                                {cat.tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
                               </select>
                             </div>
                           </div>
@@ -866,13 +980,13 @@ export default function NYCBurgerRanker() {
               )}
             </div>
 
-            {rankedBurgers.length > 0 && (
+            {rankedItems.length > 0 && (
               <div className="text-center">
                 <button
                   onClick={saveRanking}
                   className="bg-green-500 text-white px-8 py-4 rounded-lg text-lg font-bold hover:bg-green-600 shadow-lg"
                 >
-                  {hasSubmitted ? '✓ Update My Ranking' : 'Submit My Ranking'}
+                  {submitted[category] ? `✓ Update My ${cat.label} Ranking` : `Submit My ${cat.label} Ranking`}
                 </button>
                 <p className="text-sm text-gray-600 mt-2">Your ranking will be visible to your followers!</p>
               </div>
@@ -888,7 +1002,7 @@ export default function NYCBurgerRanker() {
                 <span className="font-medium text-gray-800">Filter by labels:</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {allTags.map(tag => (
+                {cat.tags.map(tag => (
                   <button
                     key={tag}
                     onClick={() => {
@@ -916,13 +1030,13 @@ export default function NYCBurgerRanker() {
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                 <Trophy className="w-8 h-8 text-yellow-500" />
-                NYC's Best Burgers
+                NYC's Best {cat.label}
               </h2>
 
               {filteredLeaderboard.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <div className="text-6xl mb-4">🏆</div>
-                  <p>{selectedTags.length > 0 ? 'No burgers match your filters' : 'No submissions yet. Be the first to rank!'}</p>
+                  <p>{selectedTags.length > 0 ? `No ${cat.plural} match your filters` : 'No submissions yet. Be the first to rank!'}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -994,7 +1108,7 @@ export default function NYCBurgerRanker() {
                   <div key={user.userId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
                     <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
                       <div className="font-medium text-gray-800">@{user.username}</div>
-                      <div className="text-xs text-gray-600">{user.rankingCount} burgers ranked</div>
+                      <div className="text-xs text-gray-600">{user.rankingCount} spots ranked</div>
                     </div>
                     {following.includes(user.userId) ? (
                       <button
@@ -1032,7 +1146,7 @@ export default function NYCBurgerRanker() {
                     <div key={user.userId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
                       <div className="flex-1 cursor-pointer" onClick={() => viewUserProfile(user.userId)}>
                         <div className="font-medium text-gray-800">@{user.username}</div>
-                        <div className="text-xs text-gray-600">{user.rankingCount} burgers ranked</div>
+                        <div className="text-xs text-gray-600">{user.rankingCount} spots ranked</div>
                       </div>
                       <button
                         onClick={() => viewUserProfile(user.userId)}
@@ -1061,7 +1175,7 @@ export default function NYCBurgerRanker() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800">@{selectedUserProfile.username}</h2>
-                  <p className="text-sm text-gray-600">{selectedUserProfile.ranking.length} burgers ranked</p>
+                  <p className="text-sm text-gray-600">{countRanked(selectedUserProfile.rankings)} spots ranked</p>
                 </div>
                 {following.includes(selectedUserProfile.userId) ? (
                   <button
@@ -1081,12 +1195,12 @@ export default function NYCBurgerRanker() {
                 )}
               </div>
 
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Their Top Burgers</h3>
-              {selectedUserProfile.ranking.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">This user hasn't ranked any burgers yet</p>
+              <h3 className="text-lg font-bold text-gray-800 mb-4">Their Top {cat.label}</h3>
+              {selectedUserProfile.rankings[category].length === 0 ? (
+                <p className="text-gray-500 text-center py-8">This user hasn't ranked any {cat.plural} yet</p>
               ) : (
                 <div className="space-y-3">
-                  {selectedUserProfile.ranking.map((burger, index) => (
+                  {selectedUserProfile.rankings[category].map((burger, index) => (
                     <div key={index} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-start gap-4">
                         <div className="w-10 h-10 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">
@@ -1128,7 +1242,7 @@ export default function NYCBurgerRanker() {
         )}
 
         <div className="mt-8 text-center text-sm text-gray-500 pb-8">
-          <p>🍔 Share your burger rankings with friends!</p>
+          <p>{cat.emoji} Share your {cat.singular} rankings with friends!</p>
         </div>
       </div>
     </div>
