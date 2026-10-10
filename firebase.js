@@ -1,4 +1,6 @@
 // Firebase setup shared by auth and data code. The SDK is loaded from Google's CDN.
+// Without an API key the app runs in demo mode: accounts, lists and follows are kept
+// in this browser only, so the prototype can be tried before Firebase is set up.
 const SDK = 'https://www.gstatic.com/firebasejs/10.7.1';
 
 const FIREBASE_CONFIG = {
@@ -10,8 +12,14 @@ const FIREBASE_CONFIG = {
   appId: "1:148456854796:web:a750700ca0b7eb65d1a529"
 };
 
-export const loadFirestoreSdk = () => import(/* @vite-ignore */ `${SDK}/firebase-firestore.js`);
-export const loadAuthSdk = () => import(/* @vite-ignore */ `${SDK}/firebase-auth.js`);
+export const isDemoMode = !FIREBASE_CONFIG.apiKey;
+
+export const loadFirestoreSdk = () => (isDemoMode
+  ? import('./demo/firestore.js')
+  : import(/* @vite-ignore */ `${SDK}/firebase-firestore.js`));
+export const loadAuthSdk = () => (isDemoMode
+  ? import('./demo/auth.js')
+  : import(/* @vite-ignore */ `${SDK}/firebase-auth.js`));
 
 let firebasePromise = null;
 
@@ -19,10 +27,11 @@ let firebasePromise = null;
 export function getFirebase() {
   if (!firebasePromise) {
     firebasePromise = (async () => {
-      const { initializeApp } = await import(/* @vite-ignore */ `${SDK}/firebase-app.js`);
       const { getFirestore } = await loadFirestoreSdk();
       const { getAuth } = await loadAuthSdk();
-      const app = initializeApp(FIREBASE_CONFIG);
+      const app = isDemoMode
+        ? null
+        : (await import(/* @vite-ignore */ `${SDK}/firebase-app.js`)).initializeApp(FIREBASE_CONFIG);
       return { db: getFirestore(app), auth: getAuth(app) };
     })();
     firebasePromise.catch(() => { firebasePromise = null; });

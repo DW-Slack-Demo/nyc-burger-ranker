@@ -12,6 +12,12 @@ password in the database. Each person's top-10 lists (one per category) save
 automatically to their account and are there the next time they log in, and they
 can follow other people to see their lists.
 
+### Demo mode
+
+Until a Firebase API key is configured, the app runs in demo mode: sign-up, login,
+saved lists and following all work, but everything is stored in the current
+browser only, so other people and other devices won't see it.
+
 ### Setup
 
 1. In the Firebase console, open **Authentication > Sign-in method** and enable **Email/Password**.
