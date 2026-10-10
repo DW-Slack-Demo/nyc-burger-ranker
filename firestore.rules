@@ -4,15 +4,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Older accounts were created with a username-based placeholder email; newer ones
-    // (and older ones that added an email) own a usernames/{name} entry instead.
+    // (and older ones that added an email) own a usernames/{name} entry instead. This looks
+    // at the entry as it will be after the write, so changing username can claim the new
+    // name and switch the profile over to it in one step.
     function ownsUsername(name) {
       return request.auth.token.email == name + '@users.nyc-burger-ranker.app'
-        || (exists(/databases/$(database)/documents/usernames/$(name))
-          && get(/databases/$(database)/documents/usernames/$(name)).data.uid == request.auth.uid);
+        || (existsAfter(/databases/$(database)/documents/usernames/$(name))
+          && getAfter(/databases/$(database)/documents/usernames/$(name)).data.uid == request.auth.uid);
     }
 
     // Profiles and saved lists. Signed-in users can read everyone's (to follow them
-    // and see their lists) but can only change their own.
+    // and see their lists) but can only change or delete their own.
     match /users/{uid} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
@@ -20,21 +22,26 @@ service cloud.firestore {
         // The username must be one this account owns (usernames are unique).
         && request.resource.data.usernameLower == request.resource.data.username.lower()
         && ownsUsername(request.resource.data.usernameLower);
-      allow delete: if false;
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Which account owns each username. Anyone can check whether a name is taken;
-    // a name can be claimed once and never changes hands.
+    // Which account owns each username. Anyone can check whether a name is taken.
+    // A name never changes hands directly: only its owner can release it, and only once
+    // their profile no longer uses it (they changed username or deleted their account).
     match /usernames/{name} {
       allow read: if true;
       allow create: if request.auth != null
         && name.matches('^[a-z0-9_]{3,20}$')
         && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+          || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower != name);
     }
 
-    // Leaderboard entries: one per user per city per category, written only by that user,
+    // Leaderboard entries: one per user per city per category, written (or deleted) only by that user,
     // under their own username, with at most 10 spots. NYC entries (and older ones with no
     // city) are {uid}_{category}; other cities' are {uid}_{city}_{category}.
     function submissionIdFor(data) {
@@ -55,7 +62,7 @@ service cloud.firestore {
         && request.resource.data.items is list
         && request.resource.data.items.size() <= 10
         && (resource == null || resource.data.userId == request.auth.uid);
-      allow delete: if false;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // Photos of spots on people's lists (see photoStore.js). Each account has 30 numbered

@@ -83,3 +83,20 @@ export async function signOut() {
   writeDb(db);
   setCurrent(null);
 }
+
+export const EmailAuthProvider = { credential: (email, password) => ({ email, password }) };
+
+export async function reauthenticateWithCredential(user, { email, password }) {
+  const account = readDb().accounts[email];
+  if (!account || account.uid !== user.uid || account.passwordHash !== await hashPassword(password, account.salt)) {
+    throw authError('auth/invalid-credential');
+  }
+}
+
+export async function updatePassword(user, password) {
+  const db = readDb();
+  const account = db.accounts[user.email];
+  account.salt = toHex(crypto.getRandomValues(new Uint8Array(16)));
+  account.passwordHash = await hashPassword(password, account.salt);
+  writeDb(db);
+}
