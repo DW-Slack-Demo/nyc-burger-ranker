@@ -34,12 +34,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Leaderboard entries: one per user per category, written only by that user.
+    // Leaderboard entries: one per user per category, written only by that user, under
+    // their own username, with at most 10 spots.
     match /submissions/{submissionId} {
       allow read: if true;
       allow create, update: if request.auth != null
         && request.resource.data.userId == request.auth.uid
         && submissionId == request.auth.uid + '_' + request.resource.data.category
+        && request.resource.data.category in ['burgers', 'martinis', 'pizza']
+        && request.resource.data.username is string
+        && ownsUsername(request.resource.data.username.lower())
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 10
         && (resource == null || resource.data.userId == request.auth.uid);
       allow delete: if false;
     }

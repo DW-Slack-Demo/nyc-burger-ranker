@@ -390,9 +390,15 @@ export default function NYCBurgerRanker() {
         // Submissions saved before categories existed are burger rankings.
         const burgerScores = scoresByCategory[submission.category || 'burgers'];
         if (!burgerScores) return;
-        (submission.items || submission.burgers)?.forEach((burger, index) => {
+        // A list counts once per spot and only its top 10, with ratings kept to 1-5 stars,
+        // so an edited submission can't stuff the leaderboard.
+        const counted = new Set();
+        (submission.items || submission.burgers)?.slice(0, 10).forEach((burger, index) => {
+          if (!burger?.name) return;
           // Hand-typed spots have a one-off id each, so count them by name instead.
           const placeId = burger.place_id && !isUnverified(burger) ? burger.place_id : `name:${normalize(burger.name)}`;
+          if (counted.has(placeId)) return;
+          counted.add(placeId);
           if (!burgerScores[placeId]) {
             burgerScores[placeId] = {
               name: burger.name,
@@ -408,7 +414,7 @@ export default function NYCBurgerRanker() {
           
           const points = 10 - index;
           burgerScores[placeId].totalPoints += points;
-          burgerScores[placeId].totalRatings += burger.rating;
+          burgerScores[placeId].totalRatings += Math.min(5, Math.max(1, Number(burger.rating) || 1));
           burgerScores[placeId].submissions += 1;
           
           if (burger.comments?.trim()) {

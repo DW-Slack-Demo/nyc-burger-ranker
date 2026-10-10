@@ -136,6 +136,21 @@ async function attachListings(env, results) {
   return matched.filter(Boolean);
 }
 
+const SLOW_DOWN = 'Too many searches right now. Try again in a minute.';
+
+// True when a rate limit (see wrangler.toml) says this request is one too many. A missing
+// limit or a hiccup checking it lets the search through rather than breaking it.
+async function overLimit(limiter, key) {
+  if (!limiter) return false;
+  try {
+    return !(await limiter.limit({ key })).success;
+  } catch {
+    return false;
+  }
+}
+
+const visitor = (request) => request.headers.get('CF-Connecting-IP') || 'unknown';
+
 async function readQuery(request) {
   try {
     return String((await request.json()).query || '').trim();
@@ -157,6 +172,9 @@ async function handlePlaces(request, env, cors) {
   if (!env.GOOGLE_PLACES_API_KEY) {
     return json({ error: "Official restaurant search isn't switched on yet." }, 503, cors);
   }
+  if (await overLimit(env.PLACES_LIMIT_PER_VISITOR, visitor(request))) {
+    return json({ error: SLOW_DOWN }, 429, cors);
+  }
   const query = await readQuery(request);
   const invalid = checkQuery(query, cors);
   if (invalid) return invalid;
@@ -165,7 +183,7 @@ async function handlePlaces(request, env, cors) {
     return json({ places: await searchPlaces(env, query, 10) }, 200, cors);
   } catch (error) {
     if (error instanceof PlacesError && error.status === 429) {
-      return json({ error: 'Too many searches right now. Try again in a minute.' }, 429, cors);
+      return json({ error: SLOW_DOWN }, 429, cors);
     }
     return json({ error: 'Could not reach Google Maps. Try again.' }, 502, cors);
   }
@@ -186,6 +204,10 @@ export default {
       return json({ error: 'The AI search server is missing its Anthropic API key.' }, 500, cors);
     }
 
+    if (await overLimit(env.AI_LIMIT_PER_VISITOR, visitor(request))
+      || await overLimit(env.AI_LIMIT_TOTAL, 'everyone')) {
+      return json({ error: SLOW_DOWN }, 429, cors);
+    }
     const query = await readQuery(request);
     const invalid = checkQuery(query, cors);
     if (invalid) return invalid;
@@ -196,7 +218,7 @@ export default {
       return json(found, 200, cors);
     } catch (error) {
       if (error instanceof Anthropic.RateLimitError) {
-        return json({ error: 'Too many searches right now. Try again in a minute.' }, 429, cors);
+        return json({ error: SLOW_DOWN }, 429, cors);
       }
       if (error instanceof Anthropic.AuthenticationError) {
         console.error('Anthropic rejected the API key');
