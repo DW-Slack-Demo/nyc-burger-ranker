@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 // Pin colours match the bistro palette in index.html.
 const PIN_COLORS = {
   ranked: '#6F1D2A', // wine
+  tried: '#5C4F44', // ink-soft
   want: '#A6814A', // brass
   follows: '#2F4A3B', // vert
 };
@@ -39,7 +40,7 @@ const popupContent = (pin) => {
 };
 
 // A map of one city, opening at center ([lat, lng]), with one pin per spot. Each pin is
-// { key, lat, lng, kind: 'ranked' | 'want' | 'follows', label, name, address, details: [lines] }.
+// { key, lat, lng, kind: 'ranked' | 'tried' | 'want' | 'follows', label, name, address, details: [lines] }.
 export default function PlacesMap({ center, pins }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
