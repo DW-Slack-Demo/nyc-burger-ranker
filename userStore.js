@@ -1,11 +1,11 @@
 // Per-user data in Firestore: users/{uid} holds the username, who they follow,
 // and one saved top-10 list per category under rankings[categoryKey].
-import { getFirebase, loadFirestoreSdk } from './firebase.js';
+import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
 
 export async function loadUser(uid) {
   const { db } = await getFirebase();
   const { doc, getDoc } = await loadFirestoreSdk();
-  const snapshot = await getDoc(doc(db, 'users', uid));
+  const snapshot = await withTimeout(getDoc(doc(db, 'users', uid)));
   return snapshot.exists() ? { userId: uid, ...snapshot.data() } : null;
 }
 
@@ -18,7 +18,7 @@ export async function createProfile(uid, username, legacyUserId = null) {
   const rankings = {};
   if (legacyUserId) {
     try {
-      const legacy = await getDoc(doc(db, 'users', legacyUserId));
+      const legacy = await withTimeout(getDoc(doc(db, 'users', legacyUserId)));
       const data = legacy.exists() && !legacy.data().hasAccount ? legacy.data() : null;
       const burgers = data?.rankings?.burgers || data?.ranking;
       if (burgers?.length) rankings.burgers = burgers;
@@ -28,7 +28,7 @@ export async function createProfile(uid, username, legacyUserId = null) {
   }
 
   const now = new Date().toISOString();
-  await setDoc(doc(db, 'users', uid), {
+  await withTimeout(setDoc(doc(db, 'users', uid), {
     username,
     usernameLower: username.toLowerCase(),
     hasAccount: true,
@@ -36,7 +36,7 @@ export async function createProfile(uid, username, legacyUserId = null) {
     following: [],
     createdAt: now,
     updatedAt: now,
-  });
+  }));
 }
 
 // Saves every category's list so it is there the next time the user signs in.

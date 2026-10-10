@@ -2,7 +2,7 @@
 // Firebase Auth stores only a salted scrypt hash of each password; the app never
 // writes a password to Firestore. Firebase Auth needs an email, so each username
 // maps to a private placeholder address that is never shown or emailed.
-import { getFirebase, loadAuthSdk } from './firebase.js';
+import { getFirebase, loadAuthSdk, databaseErrorMessage } from './firebase.js';
 import { createProfile } from './userStore.js';
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
@@ -54,7 +54,11 @@ export async function watchAuth(callback) {
   const { auth } = await getFirebase();
   const { onAuthStateChanged } = await loadAuthSdk();
   return onAuthStateChanged(auth, async (user) => {
-    if (signupInProgress) await signupInProgress.catch(() => {});
+    if (signupInProgress) {
+      await signupInProgress.catch(() => {});
+      // A failed sign-up signs back out, so report whoever is signed in now.
+      user = auth.currentUser;
+    }
     callback(user ? { uid: user.uid, username: user.displayName || user.email?.split('@')[0] || '' } : null);
   });
 }
@@ -89,7 +93,14 @@ async function createAccount(username, password) {
   } catch {
     // Storage can be blocked; there is just nothing to carry over then.
   }
-  await createProfile(uid, name, legacyUserId);
+  try {
+    await createProfile(uid, name, legacyUserId);
+  } catch (error) {
+    // The account exists; its profile is created on the next successful login.
+    console.error('Error creating profile:', error);
+    await logOut().catch(() => {});
+    throw new Error(databaseErrorMessage(error));
+  }
 
   return { uid, username: name };
 }
