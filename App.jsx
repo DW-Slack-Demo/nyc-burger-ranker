@@ -364,12 +364,13 @@ export default function NYCBurgerRanker() {
 
   const handleAddEmail = async (e) => {
     e.preventDefault();
-    setEmailStatus({ busy: true, error: '', sentTo: '' });
+    // A resend keeps the "sent" message up, so the buttons stay where they are.
+    setEmailStatus((prev) => ({ ...prev, busy: true, error: '' }));
     try {
       await addEmail(newEmail);
       setEmailStatus({ busy: false, error: '', sentTo: newEmail.trim() });
     } catch (error) {
-      setEmailStatus({ busy: false, error: error.message, sentTo: '' });
+      setEmailStatus((prev) => ({ ...prev, busy: false, error: error.message }));
     }
   };
 
@@ -1016,10 +1017,25 @@ export default function NYCBurgerRanker() {
           {!hasEmail && !isDemoMode && (
             <div className="mt-5 mx-auto max-w-lg p-4 bg-brass-light border border-brass/40 rounded-sm text-sm text-ink-soft text-left">
               {emailStatus.sentTo ? (
-                <p role="status">
-                  We sent a confirmation link to <strong>{emailStatus.sentTo}</strong>. Click it to add the email
-                  to your account. After that, log in with your email instead of your username.
-                </p>
+                <div role="status">
+                  <p>
+                    We sent a confirmation link to <strong>{emailStatus.sentTo}</strong>. Click it to add the email
+                    to your account. After that, log in with your email instead of your username.
+                  </p>
+                  <p className="mt-2 text-ink-muted">
+                    It can take a few minutes. If it isn't in your inbox, check spam for a message
+                    from noreply@nyc-top-10.firebaseapp.com.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={handleAddEmail} disabled={emailStatus.busy} className={`${quietButton} px-3 py-2`}>
+                      {emailStatus.busy ? 'Sending...' : 'Send it again'}
+                    </button>
+                    <button onClick={() => setEmailStatus({ busy: false, error: '', sentTo: '' })} className={`${quietButton} px-3 py-2`}>
+                      Use a different email
+                    </button>
+                  </div>
+                  {emailStatus.error && <p className="mt-2 text-wine" role="alert">{emailStatus.error}</p>}
+                </div>
               ) : (
                 <form onSubmit={handleAddEmail}>
                   <label htmlFor="add-email" className="block mb-2">
