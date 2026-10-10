@@ -1,6 +1,34 @@
 // Per-user data in Firestore: users/{uid} holds the username, who they follow,
 // and one saved top-10 list per category under rankings[categoryKey].
+// usernames/{lowercase name} records which account owns each username.
 import { getFirebase, loadFirestoreSdk, withTimeout } from './firebase.js';
+
+// True if another account already uses this username. Before sign-in only the
+// usernames collection can be checked; once signed in (ownUid given), profiles made
+// before that collection existed are checked too.
+export async function isUsernameTaken(username, ownUid = null) {
+  const { db } = await getFirebase();
+  const { doc, getDoc, collection, query, where, getDocs } = await loadFirestoreSdk();
+  const lower = username.trim().toLowerCase();
+  const claim = await withTimeout(getDoc(doc(db, 'usernames', lower)));
+  if (claim.exists() && claim.data().uid !== ownUid) return true;
+  if (!ownUid) return false;
+  const profiles = await withTimeout(getDocs(query(collection(db, 'users'), where('usernameLower', '==', lower))));
+  return profiles.docs.some((d) => d.id !== ownUid);
+}
+
+// Reserves a username for this account. Does nothing if it already owns it.
+export async function claimUsername(uid, username) {
+  const { db } = await getFirebase();
+  const { doc, getDoc, setDoc } = await loadFirestoreSdk();
+  const ref = doc(db, 'usernames', username.trim().toLowerCase());
+  const claim = await withTimeout(getDoc(ref));
+  if (claim.exists()) {
+    if (claim.data().uid === uid) return;
+    throw new Error('That username is taken. Please choose another.');
+  }
+  await withTimeout(setDoc(ref, { uid }));
+}
 
 export async function loadUser(uid) {
   const { db } = await getFirebase();

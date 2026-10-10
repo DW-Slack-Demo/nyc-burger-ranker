@@ -3,16 +3,35 @@ rules_version = '2';
 // Deploy with: firebase deploy --only firestore:rules
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Older accounts were created with a username-based placeholder email; newer ones
+    // (and older ones that added an email) own a usernames/{name} entry instead.
+    function ownsUsername(name) {
+      return request.auth.token.email == name + '@users.nyc-burger-ranker.app'
+        || (exists(/databases/$(database)/documents/usernames/$(name))
+          && get(/databases/$(database)/documents/usernames/$(name)).data.uid == request.auth.uid);
+    }
+
     // Profiles and saved lists. Signed-in users can read everyone's (to follow them
     // and see their lists) but can only change their own.
     match /users/{uid} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
         && request.auth.uid == uid
-        // The username must be the one the account was created with (it is unique).
+        // The username must be one this account owns (usernames are unique).
         && request.resource.data.usernameLower == request.resource.data.username.lower()
-        && request.auth.token.email == request.resource.data.usernameLower + '@users.nyc-burger-ranker.app';
+        && ownsUsername(request.resource.data.usernameLower);
       allow delete: if false;
+    }
+
+    // Which account owns each username. Anyone can check whether a name is taken;
+    // a name can be claimed once and never changes hands.
+    match /usernames/{name} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && name.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
     }
 
     // Leaderboard entries: one per user per category, written only by that user.

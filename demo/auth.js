@@ -69,6 +69,14 @@ export async function signInWithEmailAndPassword(_auth, email, password) {
   return { user: auth.currentUser };
 }
 
+export async function deleteUser(user) {
+  const db = readDb();
+  delete db.accounts[user.email];
+  if (db.session === user.email) db.session = null;
+  writeDb(db);
+  setCurrent(null);
+}
+
 export async function signOut() {
   const db = readDb();
   db.session = null;
