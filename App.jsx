@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, Bookmark, BookmarkPlus, Check, Camera } from 'lucide-react';
+import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, Bookmark, BookmarkPlus, Check, Camera, ChevronUp, ChevronDown } from 'lucide-react';
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
 import { watchAuth, logOut, addEmail } from './auth.js';
@@ -976,6 +976,15 @@ export default function NYCBurgerRanker() {
     setRankedItems(updated);
   };
 
+  // Move a ranked spot up (-1) or down (+1) one place. Phones can't drag, so this is how they reorder.
+  const moveBurger = (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= rankedItems.length) return;
+    const items = [...rankedItems];
+    [items[index], items[target]] = [items[target], items[index]];
+    setRankedItems(items);
+  };
+
   const handleDragStart = (index, source = 'ranked') => {
     setDraggedIndex(index);
     setDragSource(source);
@@ -1483,9 +1492,8 @@ export default function NYCBurgerRanker() {
 
         {view === 'ranking' && rankedItems.length < 10 && (
           <ol className="flex flex-col sm:flex-row sm:justify-center gap-2 sm:gap-8 mb-6 text-sm text-ink-soft">
-            {/* Reordering is drag-only, which phones can't do yet, so step 3 shows on big screens only. */}
-            {['Find a spot you love', 'Tap + to add it to your list', 'Drag to put your list in order'].map((step, i) => (
-              <li key={step} className={`${i === 2 ? 'hidden lg:flex' : 'flex'} items-center gap-2`}>
+            {['Find a spot you love', 'Tap + to add it to your list', 'Use the arrows to put your list in order'].map((step, i) => (
+              <li key={step} className="flex items-center gap-2">
                 <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-wine text-paper text-xs font-semibold">{i + 1}</span>
                 {step}
               </li>
@@ -1663,8 +1671,24 @@ export default function NYCBurgerRanker() {
                     >
                       <div className="flex items-start gap-4">
                         <div className="flex flex-col items-center gap-1 w-10 flex-shrink-0">
+                          <button
+                            onClick={() => moveBurger(index, -1)}
+                            disabled={index === 0}
+                            aria-label={`Move ${burger.name} up`}
+                            className="p-1 text-ink-muted hover:text-wine disabled:opacity-25 disabled:hover:text-ink-muted"
+                          >
+                            <ChevronUp className="w-5 h-5" />
+                          </button>
                           <div className="font-display italic text-4xl leading-none text-wine">{index + 1}</div>
-                          <GripVertical className="w-4 h-4 text-line" />
+                          <button
+                            onClick={() => moveBurger(index, 1)}
+                            disabled={index === rankedItems.length - 1}
+                            aria-label={`Move ${burger.name} down`}
+                            className="p-1 text-ink-muted hover:text-wine disabled:opacity-25 disabled:hover:text-ink-muted"
+                          >
+                            <ChevronDown className="w-5 h-5" />
+                          </button>
+                          <GripVertical className="hidden lg:block w-4 h-4 text-line" />
                         </div>
 
                         <div className="flex-1 min-w-0 space-y-3">
