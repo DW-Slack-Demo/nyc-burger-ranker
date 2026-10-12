@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, Bookmark, BookmarkPlus, Check, Camera } from 'lucide-react';
+import { Search, GripVertical, Star, MapPin, Trash2, Plus, Sparkles, X, UserPlus, Users, Bookmark, BookmarkPlus, Check, Camera, ChevronUp, ChevronDown } from 'lucide-react';
 
 import { getFirebase, loadFirestoreSdk, databaseErrorMessage, isDemoMode } from './firebase.js';
 import { watchAuth, logOut, addEmail } from './auth.js';
@@ -978,6 +978,15 @@ export default function NYCBurgerRanker() {
     setRankedItems(updated);
   };
 
+  // Move a ranked spot up (-1) or down (+1) one place. Phones can't drag, so this is how they reorder.
+  const moveBurger = (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= rankedItems.length) return;
+    const items = [...rankedItems];
+    [items[index], items[target]] = [items[target], items[index]];
+    setRankedItems(items);
+  };
+
   const handleDragStart = (index, source = 'ranked') => {
     setDraggedIndex(index);
     setDragSource(source);
@@ -1498,6 +1507,17 @@ export default function NYCBurgerRanker() {
           </div>
         </nav>
 
+        {view === 'ranking' && rankedItems.length < 10 && (
+          <ol className="flex flex-col sm:flex-row sm:justify-center gap-2 sm:gap-8 mb-6 text-sm text-ink-soft">
+            {['Find a spot you love', 'Tap + to add it to your list', 'Use the arrows to put your list in order'].map((step, i) => (
+              <li key={step} className="flex items-center gap-2">
+                <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-wine text-paper text-xs font-semibold">{i + 1}</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        )}
+
         {view === 'ranking' && (
           <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
             <div className="space-y-6">
@@ -1577,14 +1597,18 @@ export default function NYCBurgerRanker() {
             {/* Recommended */}
             <div className={panel}>
               <div className="flex items-baseline justify-between gap-3 mb-1">
-                <h3 className={heading}>{picks.title}</h3>
+                <div className={eyebrow}>{picks.title}</div>
                 <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
                   {showRecommended ? 'Hide' : 'Show'}
                 </button>
               </div>
+              {/* The action is the headline; the source is just the small label above it. */}
               {showRecommended && (
                 <div>
-                  <p className="text-sm italic text-ink-muted mb-4">Drag these into your ranking, or tap + to add.</p>
+                  <h3 className={`${heading} mb-4`}>
+                    <span className="lg:hidden">Tap + to add a spot to your list</span>
+                    <span className="hidden lg:inline">Click + or drag a spot into your list</span>
+                  </h3>
                   <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
                     {picks.spots.map((burger, idx) => (
                       <div
@@ -1642,7 +1666,7 @@ export default function NYCBurgerRanker() {
                   onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, 0)}
                 >
                   <div className="font-display italic text-2xl text-ink-soft mb-2">Your list is empty</div>
-                  <p className="text-sm">Drag {cat.plural} from the recommended list or search to add them.</p>
+                  <p className="text-sm px-4">Search for a spot, or tap + next to one of the picks to add it here.</p>
                 </div>
               ) : (
                 <div
@@ -1665,8 +1689,24 @@ export default function NYCBurgerRanker() {
                     >
                       <div className="flex items-start gap-4">
                         <div className="flex flex-col items-center gap-1 w-10 flex-shrink-0">
+                          <button
+                            onClick={() => moveBurger(index, -1)}
+                            disabled={index === 0}
+                            aria-label={`Move ${burger.name} up`}
+                            className="p-1 text-ink-muted hover:text-wine disabled:opacity-25 disabled:hover:text-ink-muted"
+                          >
+                            <ChevronUp className="w-5 h-5" />
+                          </button>
                           <div className="font-display italic text-4xl leading-none text-wine">{index + 1}</div>
-                          <GripVertical className="w-4 h-4 text-line" />
+                          <button
+                            onClick={() => moveBurger(index, 1)}
+                            disabled={index === rankedItems.length - 1}
+                            aria-label={`Move ${burger.name} down`}
+                            className="p-1 text-ink-muted hover:text-wine disabled:opacity-25 disabled:hover:text-ink-muted"
+                          >
+                            <ChevronDown className="w-5 h-5" />
+                          </button>
+                          <GripVertical className="hidden lg:block w-4 h-4 text-line" />
                         </div>
 
                         <div className="flex-1 min-w-0 space-y-3">
