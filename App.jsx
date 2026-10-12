@@ -2397,6 +2397,24 @@ export default function NYCBurgerRanker() {
                   <div>
                     <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
                     <p className="text-sm text-ink-muted">{countAllRanked(selectedUserProfile.lists)} spots ranked</p>
+                    {/* That total covers every city and category, but the list below shows one at a
+                        time, so say where the spots are and let people jump to each list. */}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {CITY_KEYS.flatMap(c => CATEGORY_KEYS.map(k => ({ c, k, n: selectedUserProfile.lists[c].rankings[k].length })))
+                        .filter(({ n }) => n > 0)
+                        .map(({ c, k, n }) => (
+                          <button
+                            key={`${c}_${k}`}
+                            onClick={() => { switchCity(c); switchCategory(k); }}
+                            aria-pressed={city === c && category === k}
+                            className={`px-2 py-0.5 rounded-sm border text-xs transition-colors ${
+                              city === c && category === k ? 'bg-wine text-paper border-wine' : 'border-line text-ink-soft hover:text-ink'
+                            }`}
+                          >
+                            {CATEGORIES[k].emoji} {CITIES[c].label} {CATEGORIES[k].label} · {n}
+                          </button>
+                        ))}
+                    </div>
                   </div>
                 </div>
                 {following.includes(selectedUserProfile.userId) ? (
@@ -2414,7 +2432,7 @@ export default function NYCBurgerRanker() {
               <div className={eyebrow}>Their picks · {cityInfo.name}</div>
               <h3 className={`${heading} mt-1 mb-4`}>Their Top {cat.label}</h3>
               {selectedUserProfile.lists[city].rankings[category].length === 0 ? (
-                <p className="font-display italic text-ink-muted text-center py-8">This user hasn't ranked any {cat.plural} yet</p>
+                <p className="font-display italic text-ink-muted text-center py-8">This user hasn't ranked any {cat.plural} in {cityInfo.name} yet</p>
               ) : (
                 <div className="divide-y divide-line border-y border-line">
                   {selectedUserProfile.lists[city].rankings[category].map((burger, index) => (
