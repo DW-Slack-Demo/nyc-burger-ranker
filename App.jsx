@@ -1481,6 +1481,18 @@ export default function NYCBurgerRanker() {
           </div>
         </nav>
 
+        {view === 'ranking' && rankedItems.length < 10 && (
+          <ol className="flex flex-col sm:flex-row sm:justify-center gap-2 sm:gap-8 mb-6 text-sm text-ink-soft">
+            {/* Reordering is drag-only, which phones can't do yet, so step 3 shows on big screens only. */}
+            {['Find a spot you love', 'Tap + to add it to your list', 'Drag to put your list in order'].map((step, i) => (
+              <li key={step} className={`${i === 2 ? 'hidden lg:flex' : 'flex'} items-center gap-2`}>
+                <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-wine text-paper text-xs font-semibold">{i + 1}</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        )}
+
         {view === 'ranking' && (
           <div className="grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
             <div className="space-y-6">
@@ -1560,14 +1572,18 @@ export default function NYCBurgerRanker() {
             {/* Recommended */}
             <div className={panel}>
               <div className="flex items-baseline justify-between gap-3 mb-1">
-                <h3 className={heading}>{picks.title}</h3>
+                <div className={eyebrow}>{picks.title}</div>
                 <button onClick={() => setShowRecommended(!showRecommended)} className="shrink-0 text-xs uppercase tracking-wider text-wine hover:text-wine-dark">
                   {showRecommended ? 'Hide' : 'Show'}
                 </button>
               </div>
+              {/* The action is the headline; the source is just the small label above it. */}
               {showRecommended && (
                 <div>
-                  <p className="text-sm italic text-ink-muted mb-4">Drag these into your ranking, or tap + to add.</p>
+                  <h3 className={`${heading} mb-4`}>
+                    <span className="lg:hidden">Tap + to add a spot to your list</span>
+                    <span className="hidden lg:inline">Click + or drag a spot into your list</span>
+                  </h3>
                   <div className="divide-y divide-line border-y border-line max-h-96 lg:max-h-[34rem] overflow-y-auto">
                     {picks.spots.map((burger, idx) => (
                       <div
@@ -1624,7 +1640,7 @@ export default function NYCBurgerRanker() {
                   onDrop={(e) => dragSource === 'recommended' && handleDropFromRecommended(e, 0)}
                 >
                   <div className="font-display italic text-2xl text-ink-soft mb-2">Your list is empty</div>
-                  <p className="text-sm">Drag {cat.plural} from the recommended list or search to add them.</p>
+                  <p className="text-sm px-4">Search for a spot, or tap + next to one of the picks to add it here.</p>
                 </div>
               ) : (
                 <div
