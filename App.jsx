@@ -2391,11 +2391,12 @@ export default function NYCBurgerRanker() {
             </button>
 
             <div className={panel}>
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
+              {/* On phones the Follow button sits below the name so the two don't crowd each other. */}
+              <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+                <div className="flex items-center gap-4 min-w-0">
                   <Avatar src={avatars[selectedUserProfile.userId]} username={selectedUserProfile.username} size={64} />
-                  <div>
-                    <h2 className="font-display text-3xl text-ink">@{selectedUserProfile.username}</h2>
+                  <div className="min-w-0">
+                    <h2 className="font-display text-3xl text-ink break-words">@{selectedUserProfile.username}</h2>
                     <p className="text-sm text-ink-muted">{countAllRanked(selectedUserProfile.lists)} spots ranked</p>
                     {/* That total covers every city and category, but the list below shows one at a
                         time, so say where the spots are and let people jump to each list. */}
@@ -2411,7 +2412,7 @@ export default function NYCBurgerRanker() {
                               city === c && category === k ? 'bg-wine text-paper border-wine' : 'border-line text-ink-soft hover:text-ink'
                             }`}
                           >
-                            {CATEGORIES[k].emoji} {CITIES[c].label} {CATEGORIES[k].label} · {n}
+                            {CITIES[c].label} {CATEGORIES[k].label} · {n}
                           </button>
                         ))}
                     </div>
