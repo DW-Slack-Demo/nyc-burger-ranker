@@ -28,4 +28,16 @@ name = "PLACES_LIMIT_PER_VISITOR"
 namespace_id = "1003"
 simple = { limit = 30, period = 60 }
 
+# Reserve-button lookups of a spot's booking page, per visitor and across everyone, per
+# minute. Each spot is looked up once and then saved for everyone, so these stay low.
+[[ratelimits]]
+name = "BOOKING_LIMIT_PER_VISITOR"
+namespace_id = "1004"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "BOOKING_LIMIT_TOTAL"
+namespace_id = "1005"
+simple = { limit = 60, period = 60 }
+
 # ANTHROPIC_API_KEY is a secret, never stored here: `npx wrangler secret put ANTHROPIC_API_KEY`

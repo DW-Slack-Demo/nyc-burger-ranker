@@ -2,10 +2,12 @@
 // sends searches here and this Worker calls Google Places and Claude with the keys kept as
 // Cloudflare secrets.
 //   POST /places {query, city}  -> official Google Maps listings for food and drink spots in that city
+//   POST /booking {placeId, name, address, city} -> the spot's Resy/OpenTable/Tock/... booking page, if any
 //   POST /        {query, city}  -> AI Finder recommendations
 // city is "nyc" or "miami"; anything else (including older versions of the site, which
 // don't send it) means NYC.
 import Anthropic from '@anthropic-ai/sdk';
+import { bookingLinkFrom } from './booking.js';
 
 const CATEGORIES = ['burgers', 'martinis', 'pizza', 'other'];
 const MAX_QUERY_LENGTH = 300;
@@ -212,6 +214,70 @@ async function handlePlaces(request, env, cors) {
   }
 }
 
+// Google place ids are long and mixed-case ("ChIJ..."); the app's recommended spots use
+// short made-up ids ("raouls", "miami-lucali") that Google doesn't know.
+const isGooglePlaceId = (id) => /^[A-Za-z0-9_-]{20,200}$/.test(id) && /[A-Z]/.test(id);
+
+// The restaurant's own website from Google Maps: by its id when it has one, otherwise by
+// looking its name and address up in the city.
+async function websiteFor(env, { placeId, name, address }, city) {
+  const headers = { 'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY };
+  let response;
+  if (isGooglePlaceId(placeId)) {
+    response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+      headers: { ...headers, 'X-Goog-FieldMask': 'websiteUri' },
+    });
+  } else {
+    const textQuery = address && address !== 'Multiple Locations' ? `${name}, ${address}` : name;
+    response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.websiteUri' },
+      body: JSON.stringify({ textQuery, pageSize: 1, locationRestriction: city.bounds, languageCode: 'en' }),
+    });
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('Google Places error:', response.status, JSON.stringify(data.error || data));
+    throw new PlacesError(response.status);
+  }
+  return isGooglePlaceId(placeId) ? data.websiteUri : data.places?.[0]?.websiteUri;
+}
+
+async function handleBooking(request, env, cors) {
+  if (!env.GOOGLE_PLACES_API_KEY) {
+    return json({ error: "Booking lookups aren't switched on yet." }, 503, cors);
+  }
+  if (await overLimit(env.BOOKING_LIMIT_PER_VISITOR, visitor(request))
+    || await overLimit(env.BOOKING_LIMIT_TOTAL, 'everyone')) {
+    return json({ error: SLOW_DOWN }, 429, cors);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Send JSON like {"placeId": "...", "name": "..."}.' }, 400, cors);
+  }
+  const spot = {
+    placeId: String(body.placeId || ''),
+    name: String(body.name || '').trim(),
+    address: String(body.address || '').trim(),
+  };
+  if (!spot.name || spot.name.length > 200 || spot.address.length > 300 || spot.placeId.length > 200) {
+    return json({ error: 'Send the spot\'s name (and address).' }, 400, cors);
+  }
+
+  try {
+    const website = await websiteFor(env, spot, cityFor(body.city));
+    return json({ url: await bookingLinkFrom(website) }, 200, cors);
+  } catch (error) {
+    if (error instanceof PlacesError && error.status === 429) {
+      return json({ error: SLOW_DOWN }, 429, cors);
+    }
+    console.error('Booking lookup failed:', error);
+    return json({ error: 'Could not look up a booking page. Try again.' }, 502, cors);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request, env);
@@ -219,9 +285,9 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, cors);
 
-    if (new URL(request.url).pathname.replace(/\/+$/, '') === '/places') {
-      return handlePlaces(request, env, cors);
-    }
+    const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    if (path === '/places') return handlePlaces(request, env, cors);
+    if (path === '/booking') return handleBooking(request, env, cors);
 
     if (!env.ANTHROPIC_API_KEY) {
       return json({ error: 'The AI search server is missing its Anthropic API key.' }, 500, cors);
