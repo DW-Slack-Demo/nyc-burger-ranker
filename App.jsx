@@ -7,6 +7,7 @@ import { loadUser, createProfile, saveLists, saveHomeCity, submitRanking, loadAl
 import AuthScreen from './AuthScreen.jsx';
 import PlacesMap from './PlacesMap.jsx';
 import PhotoViewer from './PhotoViewer.jsx';
+import Thumbnail from './Thumbnail.jsx';
 import ProfileSettings from './ProfileSettings.jsx';
 import Avatar from './Avatar.jsx';
 import { preparePhoto, addPhoto, deletePhoto, loadMyPhotos, loadCategoryPhotos, photoPlaceId, loadAvatars as fetchAvatars } from './photoStore.js';
@@ -408,15 +409,16 @@ export default function NYCBurgerRanker() {
     return () => clearTimeout(timer);
   }, [lists, userId]);
 
-  // Everyone's photos for the leaderboard, loaded the first time each category is shown.
+  // Everyone's photos for the current category, loaded the first time it is shown. They
+  // give each spot its thumbnail and fill the leaderboard's photo strips.
   useEffect(() => {
-    if (!userId || view !== 'leaderboard' || categoryPhotos[category]) return;
+    if (!userId || categoryPhotos[category]) return;
     let cancelled = false;
     loadCategoryPhotos(category)
       .then((photos) => { if (!cancelled) setCategoryPhotos(prev => ({ ...prev, [category]: photos })); })
       .catch((error) => console.error('Error loading photos:', error));
     return () => { cancelled = true; };
-  }, [userId, view, category]);
+  }, [userId, category]);
 
   const resetUserState = () => {
     lastSavedRankingsRef.current = null;
@@ -1326,6 +1328,21 @@ export default function NYCBurgerRanker() {
     ...(categoryPhotos[category] || []),
     ...myCategoryPhotos.filter(p => !(categoryPhotos[category] || []).some(other => other.id === p.id)),
   ].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  // A spot's thumbnail: your newest photo of it, else the newest anyone has posted, else
+  // its first letter. Tapping it opens everyone's photos of the spot.
+  const thumb = (item, size) => {
+    const placeId = photoPlaceId(placeKey(item));
+    const photos = photosOf(leaderboardPhotos, placeId);
+    const pick = photos.find(p => p.userId === userId) || photos[0];
+    return (
+      <Thumbnail
+        name={item.name}
+        src={pick?.thumb}
+        size={size}
+        onOpen={() => setPhotoViewer({ title: item.name, category, placeId, mineOnly: false, startIndex: photos.indexOf(pick) })}
+      />
+    );
+  };
   const viewerPhotos = photoViewer
     ? photosOf(photoViewer.mineOnly ? myPhotos.filter(p => p.category === photoViewer.category) : leaderboardPhotos, photoViewer.placeId)
       // Photos keep the name they were posted under, so show each poster's current username.
@@ -1583,6 +1600,7 @@ export default function NYCBurgerRanker() {
                       >
                         <div className="flex-1 flex items-center gap-2">
                           <GripVertical className="w-4 h-4 text-line" />
+                          {thumb(burger, 48)}
                           <div>
                             <div className="font-display text-lg text-ink leading-tight">{burger.name}</div>
                             <div className="text-xs text-ink-muted">{burger.address}</div>
@@ -1652,7 +1670,9 @@ export default function NYCBurgerRanker() {
                         </div>
 
                         <div className="flex-1 min-w-0 space-y-3">
-                          <div>
+                          <div className="flex items-start gap-3">
+                          {thumb(burger, 64)}
+                          <div className="min-w-0">
                             <div className="font-display text-xl text-ink">{burger.name}</div>
                             <div className="text-sm text-ink-muted flex items-center gap-1 mt-0.5">
                               <MapPin className="w-3 h-3" />
@@ -1666,6 +1686,7 @@ export default function NYCBurgerRanker() {
                                 Typed in by hand. Match it to the official listing
                               </button>
                             )}
+                          </div>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -1759,9 +1780,12 @@ export default function NYCBurgerRanker() {
                         const ranked = hasPlace(rankedItems, place) || hasPlace(triedList, place);
                         return (
                           <div key={place.place_id} className="flex items-center justify-between py-3 px-2">
-                            <div>
+                            <div className="flex items-center gap-3 min-w-0">
+                              {thumb(place, 48)}
+                              <div className="min-w-0">
                               <div className="font-display text-lg text-ink leading-tight">{place.name}</div>
                               <div className="text-xs text-ink-muted">{place.address}</div>
+                              </div>
                             </div>
                             {ranked || saved ? (
                               <span className="ml-2 shrink-0 text-[11px] uppercase tracking-wider text-ink-muted flex items-center gap-1">
@@ -1803,7 +1827,7 @@ export default function NYCBurgerRanker() {
                   <div className="divide-y divide-line border-y border-line">
                     {wantConnections.map(({ item, alsoWant, rankedBy }) => (
                       <div key={placeKey(item)} className="py-4 px-2 flex items-start gap-3">
-                        <Bookmark className="w-4 h-4 mt-1.5 text-wine fill-wine shrink-0" />
+                        {thumb(item, 64)}
                         <div className="flex-1 min-w-0">
                           <div className="font-display text-xl text-ink">{item.name}</div>
                           <div className="text-sm text-ink-muted flex items-center gap-1 mt-0.5">
@@ -1866,7 +1890,8 @@ export default function NYCBurgerRanker() {
                   <div className="divide-y divide-line border-y border-line">
                     {followsWant.map(({ item, usernames }) => (
                       <div key={placeKey(item)} className="py-3 px-2 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        {thumb(item, 48)}
+                        <div className="min-w-0 flex-1">
                           <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
                           <div className="text-xs text-ink-muted">{item.address}</div>
                           <div className="text-xs text-wine mt-1">{listNames(usernames)} {usernames.length === 1 ? 'wants' : 'want'} to try it</div>
@@ -1909,9 +1934,12 @@ export default function NYCBurgerRanker() {
                         const isTried = hasPlace(triedList, place);
                         return (
                           <div key={place.place_id} className="flex items-center justify-between py-3 px-2">
-                            <div>
+                            <div className="flex items-center gap-3 min-w-0">
+                              {thumb(place, 48)}
+                              <div className="min-w-0">
                               <div className="font-display text-lg text-ink leading-tight">{place.name}</div>
                               <div className="text-xs text-ink-muted">{place.address}</div>
+                              </div>
                             </div>
                             {ranked || isTried ? (
                               <span className="ml-2 shrink-0 text-[11px] uppercase tracking-wider text-ink-muted flex items-center gap-1">
@@ -1955,7 +1983,7 @@ export default function NYCBurgerRanker() {
                 <div className="divide-y divide-line border-y border-line">
                   {triedConnections.map(({ item, alsoTried, rankedBy }) => (
                     <div key={placeKey(item)} className="py-4 px-2 flex items-start gap-3">
-                      <Check className="w-4 h-4 mt-1.5 text-ink-soft shrink-0" />
+                      {thumb(item, 64)}
                       <div className="flex-1 min-w-0 space-y-3">
                         <div>
                           <div className="font-display text-xl text-ink">{item.name}</div>
@@ -2112,6 +2140,7 @@ export default function NYCBurgerRanker() {
                       }`}>
                         {index + 1}
                       </div>
+                      {thumb(burger, 64)}
 
                       <div className="flex-1 min-w-0">
                         <div className="font-display text-xl text-ink">{burger.name}</div>
@@ -2342,7 +2371,8 @@ export default function NYCBurgerRanker() {
                       <div className="w-10 flex-shrink-0 text-center font-display italic text-4xl leading-none text-wine">
                         {index + 1}
                       </div>
-                      <div className="flex-1">
+                      {thumb(burger, 56)}
+                      <div className="flex-1 min-w-0">
                         <div className="font-display text-xl text-ink">{burger.name}</div>
                         <div className="text-sm text-ink-muted flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
@@ -2380,7 +2410,9 @@ export default function NYCBurgerRanker() {
                     <h3 className={`${heading} mt-1 mb-4`}>{cat.label} They've Tried</h3>
                     <div className="divide-y divide-line border-y border-line">
                       {theirTried.map((item) => (
-                        <div key={placeKey(item)} className="py-3 px-2">
+                        <div key={placeKey(item)} className="py-3 px-2 flex items-start gap-3">
+                          {thumb(item, 48)}
+                          <div className="flex-1 min-w-0">
                           <div className="flex items-baseline justify-between gap-3">
                             <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
                             {item.verdict && (
@@ -2391,6 +2423,7 @@ export default function NYCBurgerRanker() {
                           </div>
                           <div className="text-xs text-ink-muted">{item.address}</div>
                           {item.comments && <div className="mt-1 text-sm font-display italic text-ink-soft">"{item.comments}"</div>}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2414,7 +2447,8 @@ export default function NYCBurgerRanker() {
                           const youTried = hasPlace(triedList, item);
                           return (
                             <div key={placeKey(item)} className="py-3 px-2 flex items-center justify-between gap-3">
-                              <div className="min-w-0">
+                              {thumb(item, 48)}
+                              <div className="min-w-0 flex-1">
                                 <div className="font-display text-lg text-ink leading-tight">{item.name}</div>
                                 <div className="text-xs text-ink-muted">{item.address}</div>
                                 {both && <div className="text-xs text-wine mt-1">You both want to try this</div>}
