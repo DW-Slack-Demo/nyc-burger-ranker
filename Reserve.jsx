@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarCheck, ExternalLink, MapPin } from 'lucide-react';
+import { CalendarCheck, ChevronDown, ChevronUp, ExternalLink, MapPin, X } from 'lucide-react';
 import { databaseErrorMessage } from './firebase.js';
 import {
   BOOKING_URL, BOOKING_SITES, platformOf, canLookUp, googleMapsUrl, bookingKey,
@@ -71,9 +71,21 @@ export default function Reserve({ item, placeKey, city, cityLabel, userId }) {
       <button onClick={toggle} aria-expanded={open} className={`${linkButton} text-wine hover:text-wine-dark`}>
         <CalendarCheck className="w-3.5 h-3.5" />
         Reserve
+        {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
       {open && (
-        <div className="mt-2 border border-line rounded-sm bg-paper/60 px-3 py-3 space-y-2 text-sm">
+        <div
+          onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+          className="relative mt-2 border border-line rounded-sm bg-paper/60 pl-3 pr-10 py-3 space-y-2 text-sm"
+        >
+          <button
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            title="Close"
+            className="absolute top-1.5 right-1.5 p-1.5 text-ink-muted hover:text-wine"
+          >
+            <X className="w-4 h-4" />
+          </button>
           {status === 'checking' ? (
             <p className="italic text-ink-muted">Looking for their booking page...</p>
           ) : (
