@@ -6,6 +6,7 @@ import { watchAuth, logOut, addEmail } from './auth.js';
 import { loadUser, createProfile, saveLists, saveHomeCity, submitRanking, loadAllUsers as fetchAllUsers, loadFollowers as fetchFollowers, setFollowing as saveFollowing } from './userStore.js';
 import AuthScreen from './AuthScreen.jsx';
 import PlacesMap from './PlacesMap.jsx';
+import Reserve from './Reserve.jsx';
 import PhotoViewer from './PhotoViewer.jsx';
 import ProfileSettings from './ProfileSettings.jsx';
 import Avatar from './Avatar.jsx';
@@ -1710,6 +1711,8 @@ export default function NYCBurgerRanker() {
                           />
 
                           {photoRow(burger)}
+
+                          <Reserve key={placeKey(burger)} item={burger} placeKey={placeKey(burger)} city={city} cityLabel={cityInfo.label} userId={userId} />
                         </div>
 
                         <button onClick={() => removeBurger(index)} aria-label={`Remove ${burger.name}`} className="text-ink-muted hover:text-wine p-2">
@@ -1841,6 +1844,9 @@ export default function NYCBurgerRanker() {
                               <Check className="w-3.5 h-3.5" />
                               Just tried it
                             </button>
+                          </div>
+                          <div className="mt-3">
+                            <Reserve key={placeKey(item)} item={item} placeKey={placeKey(item)} city={city} cityLabel={cityInfo.label} userId={userId} />
                           </div>
                         </div>
                         <button onClick={() => removeFromWantToTry(item)} aria-label={`Remove ${item.name}`} className="text-ink-muted hover:text-wine p-2">
@@ -2007,6 +2013,8 @@ export default function NYCBurgerRanker() {
 
                         {photoRow(item)}
 
+                        <Reserve key={placeKey(item)} item={item} placeKey={placeKey(item)} city={city} cityLabel={cityInfo.label} userId={userId} />
+
                         <button
                           onClick={() => markTried(item)}
                           className="text-xs uppercase tracking-wider font-semibold text-wine hover:text-wine-dark flex items-center gap-1"
@@ -2126,6 +2134,9 @@ export default function NYCBurgerRanker() {
                             ))}
                           </div>
                         )}
+                        <div className="mt-2">
+                          <Reserve key={placeKey(burger)} item={burger} placeKey={placeKey(burger)} city={city} cityLabel={cityInfo.label} userId={userId} />
+                        </div>
                         {(() => {
                           const placeId = photoPlaceId(placeKey(burger));
                           const photos = photosOf(leaderboardPhotos, placeId);

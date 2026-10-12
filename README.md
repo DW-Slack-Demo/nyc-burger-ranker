@@ -61,6 +61,27 @@ Until they are matched, the leaderboard counts hand-typed spots with the same na
 7. Actions > **Deploy AI search helper** > **Run workflow**. The search bar uses the
    helper at `VITE_AI_SEARCH_URL` (its `/places` address), so nothing else needs changing.
 
+## Reserving a table
+
+Every spot has a **Reserve** button. It always offers the spot's Google Maps page, which
+shows Google's own "Reserve a table" button for restaurants on OpenTable, Resy and similar
+sites, or their phone number if they don't take bookings online. Maps links are free.
+
+When the restaurant's booking page is known, the button also offers **Book on Resy** (or
+OpenTable, Tock, SevenRooms, Yelp). The first time anyone opens Reserve for a spot, the
+Cloudflare helper (its `/booking` address) gets the restaurant's website from Google Maps
+and reads it for a link to one of those sites. The answer is saved in Firestore
+(`bookingLinks`) for everyone, so each spot is only looked up once. Anyone signed in can
+add or fix a link by hand; only links to those booking sites are accepted.
+
+The booking sites don't let other apps make bookings for them (their APIs are only for
+approved partners), so the button opens their page, where people pick a time.
+
+The lookup uses Google's Place Details with the website field, which Google bills
+separately from Text Search; it has its own free monthly allowance. It needs the
+`bookingLinks` rules from firestore.rules to be published (Firebase console > Firestore >
+Rules); until then each lookup still works but isn't saved for everyone.
+
 ## AI Finder
 
 The AI Finder takes a plain-language request ("a dirty martini in downtown Brooklyn")

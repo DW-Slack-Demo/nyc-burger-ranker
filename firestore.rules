@@ -121,5 +121,25 @@ service cloud.firestore {
         && request.resource.data.updatedAt.size() <= 40;
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Booking pages for the Reserve button (see bookingStore.js), one per spot, shared by
+    // everyone so each spot is looked up once. Only links to the big booking sites are
+    // allowed, so nobody can point a Reserve button at a harmful page. An automatic lookup
+    // never replaces a link someone added by hand.
+    match /bookingLinks/{placeId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && placeId.matches('[A-Za-z0-9_-]{1,150}')
+        && request.resource.data.keys().hasOnly(['url', 'source', 'checkedAt', 'updatedBy'])
+        && request.resource.data.url is string
+        && (request.resource.data.url == ''
+          || request.resource.data.url.matches('https://((www|widgets)[.])?((resy|opentable|exploretock|sevenrooms)[.]com|yelp[.]com/reservations)/[-A-Za-z0-9._~:/?#@!$&()*+,;=%]{0,400}'))
+        && request.resource.data.source in ['auto', 'manual']
+        && request.resource.data.checkedAt is string
+        && request.resource.data.checkedAt.size() <= 40
+        && request.resource.data.updatedBy == request.auth.uid
+        && (resource == null || resource.data.source == 'auto' || request.resource.data.source == 'manual');
+      allow delete: if false;
+    }
   }
 }

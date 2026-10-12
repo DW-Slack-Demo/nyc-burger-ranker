@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { googleMapsUrl } from './bookingStore.js';
 
 // Pin colours match the bistro palette in index.html.
 const PIN_COLORS = {
@@ -32,7 +33,8 @@ const popupContent = (pin) => {
   if (pin.address) box.appendChild(el('div', 'ts-popup-address', pin.address));
   pin.details.forEach((line) => box.appendChild(el('div', 'ts-popup-line', line)));
   const link = el('a', 'ts-popup-link', 'Open in Google Maps');
-  link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pin.name} ${pin.address || ''}`)}`;
+  // A pin's key is the spot's Google place id when it has one, so Maps opens that exact listing.
+  link.href = googleMapsUrl({ name: pin.name, address: pin.address, place_id: pin.key });
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   box.appendChild(link);
